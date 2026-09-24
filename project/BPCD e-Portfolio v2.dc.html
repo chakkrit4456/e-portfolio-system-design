@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=Noto+Serif+Thai:wght@500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<style>
+body{margin:0;background:#F4F1EF;font-family:'IBM Plex Sans Thai',sans-serif;color:#1F1A1B;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:#7B1E2B;text-decoration:none}a:hover{color:#4A0F18;text-decoration:underline}
+input,select,textarea,button{font-family:inherit}
+@keyframes ringPulse{0%{transform:scale(1);opacity:.55}100%{transform:scale(1.75);opacity:0}}
+@keyframes micPulse{0%,100%{box-shadow:0 0 0 0 rgba(196,40,56,.5)}50%{box-shadow:0 0 0 8px rgba(196,40,56,0)}}
+@keyframes blink{0%,80%,100%{opacity:.2}40%{opacity:1}}
+</style>
+</helmet>
+
+<sc-if value="{{ isAdmin }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;min-height:100vh">
+  <aside style="width:252px;flex-shrink:0;background:#4A0F18;color:#F3E6E7;display:flex;flex-direction:column;position:sticky;top:0;height:100vh">
+    <div style="padding:20px 20px 18px;display:flex;gap:12px;align-items:center;border-bottom:1px solid rgba(255,255,255,.08)">
+      <img src="assets/vec-logo.png" alt="ตรา สอศ." style="width:44px;height:44px;flex-shrink:0;display:block">
+      <div style="line-height:1.25">
+        <div style="font-weight:700;font-size:15px;color:#fff">BPCD e‑Portfolio</div>
+        <div style="font-size:11.5px;color:#D9B8BC">ระบบแฟ้มสะสมงานอิเล็กทรอนิกส์</div>
+      </div>
+    </div>
+    <div style="padding:16px 12px 6px;font-size:11px;letter-spacing:1px;color:#B98C92;padding-left:22px">เมนูหลัก</div>
+    <nav style="display:flex;flex-direction:column;gap:2px;padding:0 12px">
+      <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="6">
+        <button onClick="{{ n.onClick }}" style="all:unset;cursor:pointer;display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;font-size:14px;background:{{ n.bg }};color:{{ n.fg }}" style-hover="background:rgba(255,255,255,.07)">
+          <i class="{{ n.icon }}" style="font-size:16px;width:18px"></i>
+          <span style="flex:1">{{ n.label }}</span>
+          <sc-if value="{{ n.badge }}"><span style="background:#B8913A;color:#2A0A0F;font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px">{{ n.badge }}</span></sc-if>
+        </button>
+      </sc-for>
+    </nav>
+    <div style="padding:18px 12px 6px 22px;font-size:11px;letter-spacing:1px;color:#B98C92">การแสดงผล</div>
+    <div style="padding:0 12px">
+      <button onClick="{{ goPortfolio }}" style="all:unset;cursor:pointer;display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;font-size:14px;color:#F3E6E7;width:100%;box-sizing:border-box" style-hover="background:rgba(255,255,255,.07)">
+        <i class="bi bi-journal-richtext" style="font-size:16px;width:18px"></i><span style="flex:1">หน้าแสดง Portfolio</span><i class="bi bi-box-arrow-up-right" style="font-size:12px;opacity:.6"></i>
+      </button>
+    </div>
+    <div style="margin-top:auto;padding:16px;border-top:1px solid rgba(255,255,255,.08)">
+      <div style="background:rgba(184,145,58,.12);border:1px solid rgba(184,145,58,.35);border-radius:10px;padding:12px">
+        <div style="font-size:12px;color:#F1D9A0;font-weight:600;display:flex;gap:6px;align-items:center"><i class="bi bi-stars"></i>ผู้ช่วย AI</div>
+        <div style="font-size:12px;color:#E4CBCE;margin-top:4px;line-height:1.5">{{ aiStatusText }}</div>
+      </div>
+    </div>
+  </aside>
+
+  <main style="flex:1;min-width:0;display:flex;flex-direction:column">
+    <header style="height:64px;background:#fff;border-bottom:1px solid #E6DEDC;display:flex;align-items:center;gap:10px;padding:0 20px;position:sticky;top:0;z-index:5;overflow:hidden">
+      <div style="font-size:13px;color:#8A7F81;display:flex;gap:8px;align-items:center;white-space:nowrap"><i class="bi bi-house-door"></i><span>หน้าหลัก</span><i class="bi bi-chevron-right" style="font-size:10px"></i><span style="color:#1F1A1B;font-weight:600">{{ pageTitle }}</span></div>
+      <div style="flex:1;min-width:0"></div>
+      <div style="display:flex;align-items:center;gap:8px;border:1px solid #E6DEDC;border-radius:8px;padding:7px 12px;flex:0 1 240px;min-width:44px;overflow:hidden;color:#8A7F81;font-size:13px"><i class="bi bi-search"></i><input value="{{ search }}" onChange="{{ onSearch }}" placeholder="ค้นหาผลงาน หลักฐาน KPI…" style="border:0;outline:0;flex:1;min-width:0;width:100%;font-size:13px;background:transparent"></div>
+      <div style="font-size:13px;border:1px solid #E6DEDC;border-radius:8px;padding:7px 12px;display:flex;gap:6px;align-items:center;white-space:nowrap;flex-shrink:0"><i class="bi bi-calendar3" style="color:#7B1E2B"></i>ปีงบ 2569</div>
+      <button style="all:unset;cursor:pointer;position:relative;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:8px;color:#5A5052" style-hover="background:#F4F1EF"><i class="bi bi-bell" style="font-size:17px"></i><span style="position:absolute;top:7px;right:8px;width:7px;height:7px;border-radius:50%;background:#C42838"></span></button>
+      <div style="display:flex;background:#F4F1EF;border-radius:8px;padding:3px;flex-shrink:0"><sc-for list="{{ roles }}" as="r" hint-placeholder-count="2"><button onClick="{{ r.onClick }}" style="all:unset;cursor:pointer;font-size:12px;padding:5px 10px;border-radius:6px;white-space:nowrap;background:{{ r.bg }};color:{{ r.fg }};font-weight:600">{{ r.label }}</button></sc-for></div>
+      <div style="display:flex;gap:10px;align-items:center;padding-left:8px;border-left:1px solid #E6DEDC">
+        <div title="{{ profile.short }}" style="width:36px;height:36px;border-radius:50%;background:#F6ECEC;color:#7B1E2B;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0">พว</div>
+        
+      </div>
+    </header>
+
+    <div style="padding:28px;display:flex;flex-direction:column;gap:22px;max-width:1360px;width:100%">
+
+      <sc-if value="{{ pDashboard }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap">
+          <div style="flex:1;min-width:280px">
+            <h1 style="margin:0;font-size:24px;font-weight:700">ภาพรวมแฟ้มสะสมงาน</h1>
+            <div style="color:#6B6264;font-size:14px;margin-top:4px">{{ profile.name }} · {{ profile.position }}</div>
+          </div>
+          <button onClick="{{ startInterview }}" style="all:unset;cursor:pointer;display:flex;gap:8px;align-items:center;background:#7B1E2B;color:#fff;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:600" style-hover="background:#641824"><i class="bi bi-mic"></i>ให้ AI สัมภาษณ์เพิ่มผลงาน</button>
+          <button onClick="{{ goPortfolio }}" style="all:unset;cursor:pointer;display:flex;gap:8px;align-items:center;background:#fff;border:1px solid #D9CCCB;color:#1F1A1B;padding:9px 16px;border-radius:8px;font-size:14px;font-weight:500" style-hover="border-color:#7B1E2B;color:#7B1E2B"><i class="bi bi-eye"></i>ดูตัวอย่าง Portfolio</button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
+          <sc-for list="{{ stats }}" as="s" hint-placeholder-count="4">
+            <div style="background:#fff;border:1px solid #E6DEDC;border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:13px;color:#6B6264">{{ s.label }}</span><span style="width:32px;height:32px;border-radius:8px;background:#F6ECEC;color:#7B1E2B;display:flex;align-items:center;justify-content:center"><i class="{{ s.icon }}"></i></span></div>
+              <div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:30px;font-weight:700;letter-spacing:-.5px">{{ s.value }}</span><span style="font-size:13px;color:#8A7F81">{{ s.unit }}</span></div>
+              <div style="font-size:12.5px;color:#6B6264">{{ s.note }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="background:#fff;border:1px solid #E6DEDC;border-radius:12px;padding:20px 22px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div style="font-weight:600;font-size:15px">เส้นทางข้อมูลผลการปฏิบัติงาน</div><div style="font-size:12.5px;color:#8A7F81">บุคลากร → การประเมิน</div></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:14px 6px">
+            <sc-for list="{{ chain }}" as="c" hint-placeholder-count="9">
+              <div style="border-top:3px solid {{ c.bar }};padding-top:10px">
+                <div style="font-size:11px;color:#8A7F81">{{ c.no }}</div>
+                <div style="font-size:13px;font-weight:600;margin-top:2px">{{ c.label }}</div>
+                <div style="font-size:12px;color:#6B6264;margin-top:2px">{{ c.val }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px">
+          <div style="background:#fff;border:1px solid #E6DEDC;border-radius:12px;overflow:hidden">
+            <div style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #EFE8E6"><div style="font-weight:600;font-size:15px">ผลงานล่าสุด</div><button onClick="{{ goWorks }}" style="all:unset;cursor:pointer;font-size:13px;color:#7B1E2B">ดูทั้งหมด <i class="bi bi-arrow-right"></i></button></div>
+            <sc-for list="{{ recentWorks }}" as="w" hint-placeholder-count="5">
+              <div style="display:flex;gap:14px;align-items:center;padding:13px 20px;border-bottom:1px solid #F3EEEC">
+                <div style="width:36px;height:36px;border-radius:8px;background:#F6ECEC;color:#7B1E2B;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="{{ w.icon }}"></i></div>
+                <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ w.title }}</div><div style="font-size:12px;color:#8A7F81;margin-top:2px">{{ w.type }} · {{ w.period }} · หลักฐาน {{ w.ev }} รายการ</div></div>
+                <span style="font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;background:{{ w.stBg }};color:{{ w.stFg }};white-space:nowrap">{{ w.status }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div style="background:#fff;border:1px solid #E6DEDC;border-radius:12px;padding:18px 20px">
+              <div style="display:flex;gap:8px;align-items:center;font-weight:600;font-size:15px"><i class="bi bi-stars" style="color:#B8913A"></i>ข้อสังเกตจากผู้ช่วย AI</div>
+              <div style="display:flex;flex-direction:column;gap:10px;margin-top:14px">
+                <sc-for list="{{ insights }}" as="it" hint-placeholder-count="3">
+                  <div style="display:flex;gap:10px;font-size:13px;line-height:1.55"><i class="{{ it.icon }}" style="color:{{ it.color }};margin-top:2px"></i><span>{{ it.text }}</span></div>
+                </sc-for>
+              </div>
+              <div style="margin-top:14px;padding-top:12px;border-top:1px dashed #E6DEDC;font-size:11.5px;color:#8A7F81">AI เป็นผู้ช่วยวิเคราะห์เท่านั้น ผลการประเมินขั้นสุดท้ายเป็นของผู้ประเมินและผู้รับรอง</div>
+            </div>
+            <div style="background:#fff;border:1px solid #E6DEDC;border-radius:12px;padding:18px 20px">
+              <div style="display:flex;justify-content:space-between;font-weight:600;font-size:15px"><span>ความครบถ้วนของแฟ้ม</span><span style="color:#7B1E2B">{{ completeness }}%</span></div>
+              <div style="height:8px;background:#F1EAE8;border-radius:8px;margin-top:12px;overflow:hidden"><div style="height:100%;width:{{ completenessW }};background:#7B1E2B;border-radius:8px"></div></div>
+              <div style="display:flex;flex-direction:column;gap:7px;margin-top:14px">
+                <sc-for list="{{ checklist }}" as="ck" hint-placeholder-count="5">
+                  <div style="display:flex;gap:8px;font-size:13px;align-items:center"><i class="{{ ck.icon }}" style="color:{{ ck.color }}"></i><span style="color:{{ ck.fg }}">{{ ck.label }}</span></div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ pWorks }}">
+        <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap">
+          <div style="flex:1"><h1 style="margin:0;font-size:24px;font-weight:700">ผลงานและโครงการ</h1><div style="color:#6B6264;font-size:14px;margin-top:4px">งานประจำ งานนโยบาย งานโครงการ และงานมอบหมายพิเศษ ปีงบประมาณ 2569</div></div>
+          <button onClick="{{ startInterview }}" style="all:unset;cursor:pointer;display:flex;gap:8px;align-items:center;background:#7B1E2B;color:#fff;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:600" style-hover="background:#641824"><i class="bi bi-plus-lg"></i>เพิ่มผลงาน (สัมภาษณ์ด้วย AI)</button>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <sc-for list="{{ typeFilters }}" as="f" hint-placeholder-count="6">
+            <button onClick="{{ f.onClick }}" style="all:unset;cursor:pointer;font-size:13px;padding:6px 14px;border-radius:20px;border:1px solid {{ f.bd }};background:{{ f.bg }};color:{{ f.fg }}">{{ f.label }}</button>
+          </sc-for>
+        </div>
+        <div style="background:#fff;border:1px solid #E6DEDC;border-radius:12px;overflow:hidden">
+          <div style="display:grid;grid-template-columns:48px minmax(0,3fr) 120px minmax(0,1.4fr) 90px 130px;gap:12px;padding:12px 20px;background:#FAF7F6;border-bottom:1px solid #EFE8E6;font-size:12px;color:#6B6264;font-weight:600">
+            <div>ลำดับ</div><div>ชื่องาน / ผู้มอบหมาย</div><div>ประเภท</div><div>ผลลัพธ์</div><div>หลักฐาน</div><div>สถานะ</div>
+          </div>
+          <sc-for list="{{ worksView }}" as="w" hint-placeholder-count="6">
+            <div style="display:grid;grid-template-columns:48px minmax(0,3fr) 120px minmax(0,1.4fr) 90px 130px;gap:12px;padding:14px 20px;border-bottom:1px solid #F3EEEC;align-items:center;font-size:13.5px" style-hover="background:#FCFAF9">
+              <div style="color:#8A7F81">{{ w.no }}</div>
+              <div><div style="font-weight:600;line-height:1.45">{{ w.title }}</div><div style="font-size:12px;color:#8A7F81;margin-top:3px">{{ w.ref }} · {{ w.period }}</div></div>
+              <div><span style="font-size:12px;padding:2px 8px;border-radius:6px;background:#F4F1EF;color:#5A5052">{{ w.type }}</span></div>
+              <div style="color:#3E3537;line-height:1.45">{{ w.result }}</div>
+              <div style="display:flex;gap:6px;align-items:center;color:#5A5052"><i class="bi bi-paperclip"></i>{{ w.ev }}</div>
+              <div><span style="font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;background:{{ w.stBg }};color:{{ w.stFg }}">{{ w.status }}</span></div>
+            </div>
+          </sc-for>
+          <sc-if value="{{ worksEmpty }}"><div style="padding:40px;text-align:center;color:#8A7F81;font-size:14px">ไม่พบผลงานตามเงื่อนไข</div></sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ pEvidence }}">
+        <div><h1 style="margin:0;font-size:24px;font-weight:700">หลักฐานการปฏิบัติงาน</h1><div style="color:#6B6264;font-size:14px;margin-top:4px">คำสั่ง รายงาน รายชื่อ ภาพ วิดีโอ URL ผลงานดิจิทัล และสถิติ</div></div>
+        <div style="border:2px dashed #D9CCCB;border-radius:12px;background:#FCFAF9;padding:26px;display:flex;gap:18px;align-items:center">
+          <div style="width:52px;height:52px;border-radius:12px;background:#F6ECEC;color:#7B1E2B;display:flex;align-items:center;justify-content:center;font-size:22px"><i class="bi bi-cloud-arrow-up"></i></div>
+          <div style="flex:1"><div style="font-weight:600;font-size:15px">ลากไฟล์หลักฐานมาวางที่นี่</div><div style="font-size:13px;color:#6B6264;margin-top:2px">PDF, DOCX, XLSX, JPG, PNG, MP4 หรือวางลิงก์ Google Drive / OneDrive · AI จะช่วยจำแนกประเภทและจับคู่กับผลงาน</div></div>
+          <button style="all:unset;cursor:pointer;background:#fff;border:1px solid #D9CCCB;padding:9px 16px;border-radius:8px;font-size:14px">เลือกไฟล์</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
+          <sc-for list="{{ evidenceView }}" as="e" hint-placeholder-count="8">
+            <div style="background:#fff;border:1px solid #E6DEDC;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;gap:12px;align-items:flex-start">
+                <div style="width:40px;height:40px;border-radius:8px;background:#F6ECEC;color:#7B1E2B;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0"><i class="{{ e.icon }}"></i></div>
+                <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;line-height:1.4">{{ e.name }}</div><div style="font-size:12px;color:#8A7F81;margin-top:3px">{{ e.kind }} · {{ e.date }}</div></div>
+              </div>
+              <div style="font-size:12.5px;color:#5A5052;background:#FAF7F6;border-radius:6px;padding:7px 10px;line-height:1.45"><i class="bi bi-link-45deg"></i> {{ e.work }}</div>
+              <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;font-weight:600;padding:2px 9px;border-radius:20px;background:{{ e.stBg }};color:{{ e.stFg }}">{{ e.status }}</span><span style="font-size:12px;color:#8A7F81">{{ e.checker }}</span></div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ pKpi }}">
+        <div><h1 style="margin:0;font-size:24px;font-weight:700">KPI และสมรรถนะ</h1><div style="color:#6B6264;font-size:14px;margin-top:4px">รอบการประเมินที่ 1–2 ปีงบประมาณ 2569</div></div>
+        <div style="background:#fff;border:1px solid #E6DEDC;border-radius:12px;overflow:hidden">
+          <div style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #EFE8E6"><div style="font-weight:600;font-size:15px">ผลสัมฤทธิ์ตามตัวชี้วัด</div><div style="font-size:13px">คะแนนถ่วงน้ำหนัก <b style="color:#7B1E2B;font-size:16px">{{ kpiScore }}</b> / 5.00</div></div>
+          <div style="display:grid;grid-template-columns:minmax(0,2.6fr) 70px 90px 90px minmax(0,1.4fr) 70px;gap:12px;padding:11px 20px;background:#FAF7F6;font-size:12px;color:#6B6264;font-weight:600;border-bottom:1px solid #EFE8E6"><div>ตัวชี้วัด</div><div>น้ำหนัก</div><div>เป้าหมาย</div><div>ผลงาน</div><div>ความสำเร็จ</div><div>คะแนน</div></div>
+          <sc-for list="{{ kpis }}" as="k" hint-placeholder-count="5">
+            <div style="display:grid;grid-template-columns:minmax(0,2.6fr) 70px 90px 90px minmax(0,1.4fr) 70px;gap:12px;padding:14px 20px;border-bottom:1px solid #F3EEEC;align-items:center;font-size:13.5px">
+              <div><div style="font-weight:500">{{ k.name }}</div><div style="font-size:12px;color:#8A7F81;margin-top:2px">{{ k.source }}</div></div>
+              <div>{{ k.weight }}%</div><div>{{ k.target }}</div><div style="font-weight:600">{{ k.actual }}</div>
+              <div style="display:flex;gap:8px;align-items:center"><div style="flex:1;height:6px;background:#F1EAE8;border-radius:6px;overflow:hidden"><div style="height:100%;width:{{ k.w }};background:{{ k.bar }}"></div></div><span style="font-size:12px;color:#6B6264;width:38px">{{ k.pct }}</span></div>
+              <div style="font-weight:700;color:#7B1E2B">{{ k.score }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="background:#fff;border:1px solid #E6DEDC;border-radius:12px;padding:18px 20px">
+          <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:600;font-size:15px">สมรรถนะ (Competency)</div><div style="display:flex;gap:16px;font-size:12px;color:#6B6264"><span style="display:flex;gap:6px;align-items:center"><span style="width:12px;height:8px;background:#7B1E2B;border-radius:2px"></span>ระดับที่ประเมินได้</span><span style="display:flex;gap:6px;align-items:center"><span style="width:2px;height:12px;background:#B8913A"></span>ระดับที่คาดหวัง</span></div></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:14px 40px;margin-top:18px">
+            <sc-for list="{{ comps }}" as="c" hint-placeholder-count="8">
+              <div>
+                <div style="display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:6px"><span><span style="font-size:11px;color:#8A7F81;margin-right:6px">{{ c.group }}</span>{{ c.name }}</span><span style="font-size:12px;font-weight:600;color:{{ c.gapColor }}">{{ c.gapLabel }}</span></div>
+                <div style="position:relative;height:10px;background:#F1EAE8;border-radius:5px"><div style="height:100%;width:{{ c.w }};background:#7B1E2B;border-radius:5px"></div><div style="position:absolute;top:-4px;bottom:-4px;left:{{ c.expLeft }};width:2px;background:#B8913A"></div></div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ pSettings }}">
+        <div><div style="display:flex;gap:10px;align-items:center"><h1 style="margin:0;font-size:24px;font-weight:700">ตั้งค่าผู้ช่วย AI</h1><span style="font-size:12px;font-weight:600;background:#4A0F18;color:#F1D9A0;padding:3px 10px;border-radius:20px"><i class="bi bi-shield-lock"></i> เฉพาะผู้ดูแลระบบ</span></div><div style="color:#6B6264;font-size:14px;margin-top:4px">การตั้งค่านี้มีผลกับผู้ใช้ทุกคนในหน่วยงาน รองรับ OpenAI‑compatible endpoint</div></div>
+        <div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px">
+          <div style="background:#fff;border:1px solid #E6DEDC;border-radius:12px;padding:22px;display:flex;flex-direction:column;gap:16px">
+            <div style="font-weight:600;font-size:15px">การเชื่อมต่อ</div>
+            <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
+              <sc-for list="{{ providers }}" as="p" hint-placeholder-count="4">
+                <button onClick="{{ p.onClick }}" style="all:unset;cursor:pointer;border:1.5px solid {{ p.bd }};background:{{ p.bg }};border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:4px">
+                  <i class="{{ p.icon }}" style="font-size:18px;color:#7B1E2B"></i>
+                  <span style="font-size:13.5px;font-weight:600">{{ p.label }}</span>
+                  <span style="font-size:11.5px;color:#8A7F81">{{ p.sub }}</span>
+                </button>
+              </sc-for>
+            </div>
+            <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:500">Base URL<input value="{{ ai.baseUrl }}" onChange="{{ onBaseUrl }}" style="border:1px solid #D9CCCB;border-radius:8px;padding:9px 12px;font-size:13.5px;outline:0;font-family:ui-monospace,monospace"></label>
+            <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:500">API Key<input type="password" value="{{ ai.apiKey }}" onChange="{{ onApiKey }}" placeholder="{{ keyPlaceholder }}" style="border:1px solid #D9CCCB;border-radius:8px;padding:9px 12px;font-size:13.5px;outline:0;font-family:ui-monospace,monospace"></label>
+            <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:500">Model<input value="{{ ai.model }}" onChange="{{ onModel }}" style="border:1px solid #D9CCCB;border-radius:8px;padding:9px 12px;font-size:13.5px;outline:0;font-family:ui-monospace,monospace"></label>
+            <div style="display:flex;gap:10px;align-items:center">
+              <button onClick="{{ testConn }}" style="all:unset;cursor:pointer;display:flex;gap:8px;align-items:center;background:#7B1E2B;color:#fff;padding:9px 16px;border-radius:8px;font-size:14px;font-weight:600" style-hover="background:#641824"><i class="bi bi-plug"></i>ทดสอบการเชื่อมต่อ</button>
+              <span style="font-size:13px;color:{{ testColor }}">{{ testMsg }}</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div style="background:#fff;border:1px solid #E6DEDC;border-radius:12px;padding:20px">
+              <div style="font-weight:600;font-size:15px;display:flex;gap:8px;align-items:center"><i class="bi bi-lightning-charge" style="color:#B8913A"></i>การประหยัด Token</div>
+              <div style="font-size:13px;color:#3E3537;line-height:1.7;margin-top:10px">แปลงเสียงเป็นข้อความด้วย Web Speech API ของเบราว์เซอร์ (ไม่ส่งเสียงไปยัง AI) · โหมดสัมภาษณ์ใช้ชุดคำถามมาตรฐานในเครื่อง เรียก AI เฉพาะตอนเรียบเรียงสรุป · ส่งประวัติสนทนาไม่เกิน 10 ข้อความล่าสุด</div>
+            </div>
+            <div style="background:#fff;border:1px solid #E6DEDC;border-radius:12px;padding:20px">
+              <div style="font-weight:600;font-size:15px;display:flex;gap:8px;align-items:center"><i class="bi bi-shield-lock" style="color:#7B1E2B"></i>ความปลอดภัยและ PDPA</div>
+              <div style="font-size:13px;color:#3E3537;line-height:1.7;margin-top:10px">API Key จัดการโดยผู้ดูแลระบบ บุคลากรทั่วไปไม่เห็นและแก้ไขไม่ได้ (ระบบจริงควรเก็บแบบเข้ารหัสฝั่งเซิร์ฟเวอร์และเรียกผ่าน proxy ของหน่วยงาน) · ไม่ส่งเลขประจำตัวประชาชนหรือผลประเมินรายบุคคลให้ AI · สำหรับข้อมูลอ่อนไหว แนะนำใช้ Local LLM ภายในหน่วยงาน</div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <div style="font-size:12px;color:#A59A9C;padding-top:8px">© 2569 สำนักพัฒนาสมรรถนะครูและบุคลากรอาชีวศึกษา สำนักงานคณะกรรมการการอาชีวศึกษา</div>
+    </div>
+  </main>
+</div>
+</sc-if>
+
+<sc-if value="{{ isPortfolio }}">
+<div style="min-height:100vh;background:#F4F1EF;-webkit-tap-highlight-color:transparent;padding-bottom:48px">
+  <section style="background:#3A0B13;color:#fff;position:relative;overflow:hidden">
+    <img src="assets/vec-logo.png" alt="" style="position:absolute;right:-120px;top:-60px;width:560px;height:560px;opacity:.06;pointer-events:none;filter:grayscale(1) brightness(2)">
+    <div style="position:relative;max-width:1280px;margin:0 auto;padding:18px 32px 0;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <button onClick="{{ goAdmin }}" style="all:unset;cursor:pointer;display:flex;gap:10px;align-items:center;height:48px;padding:0 20px;border-radius:24px;background:rgba(255,255,255,.08);font-size:15px" style-hover="background:rgba(255,255,255,.15)"><i class="bi bi-arrow-left"></i>ระบบจัดการ</button>
+      <div style="display:flex;gap:12px;align-items:center;margin-left:6px">
+        <img src="assets/vec-logo.png" alt="ตรา สอศ." style="width:60px;height:60px;flex-shrink:0;display:block">
+        <div style="line-height:1.35"><div style="font-size:14.5px;font-weight:600">สำนักพัฒนาสมรรถนะครูและบุคลากรอาชีวศึกษา</div><div style="font-size:12.5px;color:#D9B8BC">สำนักงานคณะกรรมการการอาชีวศึกษา</div></div>
+      </div>
+      <div style="flex:1"></div>
+      <button onClick="{{ doPrint }}" title="พิมพ์ / PDF" style="all:unset;cursor:pointer;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:18px" style-hover="background:rgba(255,255,255,.15)"><i class="bi bi-printer"></i></button>
+    </div>
+    <div style="position:relative;max-width:1280px;margin:0 auto;padding:44px 32px 36px;display:grid;grid-template-columns:200px minmax(0,1fr) auto;gap:44px;align-items:center">
+      <div style="aspect-ratio:3/4;border-radius:22px;background:rgba(255,255,255,.06);border:1px solid rgba(212,175,90,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#D9B8BC;font-size:13px"><i class="bi bi-person" style="font-size:56px"></i>ภาพถ่ายบุคลากร</div>
+      <div style="min-width:0">
+        <div style="display:inline-flex;gap:8px;align-items:center;border:1px solid rgba(212,175,90,.5);color:#F1D9A0;border-radius:20px;padding:5px 14px;font-size:13px;letter-spacing:.5px"><i class="bi bi-journal-richtext"></i>e‑Portfolio · ปีงบประมาณ พ.ศ. 2569</div>
+        <h1 style="font-family:'Noto Serif Thai',serif;font-size:52px;line-height:1.2;margin:16px 0 8px;font-weight:700;text-wrap:balance">{{ profile.name }}</h1>
+        <div style="font-size:21px;color:#F3E6E7">{{ profile.position }}</div>
+        <div style="font-size:15px;color:#D9B8BC;margin-top:4px">{{ profile.group }}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:20px">
+          <sc-for list="{{ heroBadges }}" as="b" hint-placeholder-count="3"><span style="display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.08);border-radius:20px;padding:7px 14px;font-size:13.5px"><i class="{{ b.icon }}" style="color:#D4AF5A"></i>{{ b.label }}</span></sc-for>
+        </div>
+      </div>
+      <div style="width:220px;height:220px;border-radius:50%;background:conic-gradient(#D4AF5A {{ kpiDeg }}, rgba(255,255,255,.1) 0);display:flex;align-items:center;justify-content:center">
+        <div style="width:186px;height:186px;border-radius:50%;background:#3A0B13;display:flex;flex-direction:column;align-items:center;justify-content:center">
+          <div style="font-family:'Noto Serif Thai',serif;font-size:58px;font-weight:700;line-height:1;color:#fff">{{ kpiScore }}</div>
+          <div style="font-size:13px;color:#D9B8BC;margin-top:8px">คะแนน KPI จาก 5.00</div>
+        </div>
+      </div>
+    </div>
+    <div style="position:relative;max-width:1280px;margin:0 auto;padding:0 32px 32px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+      <sc-for list="{{ pfStats }}" as="s" hint-placeholder-count="4">
+        <div style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:18px 22px">
+          <div style="font-family:'Noto Serif Thai',serif;font-size:36px;font-weight:700;color:#F1D9A0;line-height:1.1">{{ s.value }}</div>
+          <div style="font-size:14px;color:#D9B8BC;margin-top:4px">{{ s.label }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <nav style="position:sticky;top:0;z-index:6;background:rgba(244,241,239,.94);backdrop-filter:blur(12px);border-bottom:1px solid #E6DEDC">
+    <div style="max-width:1280px;margin:0 auto;padding:12px 32px;display:flex;gap:10px;overflow-x:auto">
+      <sc-for list="{{ pfTabs }}" as="t" hint-placeholder-count="5">
+        <button onClick="{{ t.onClick }}" style="all:unset;cursor:pointer;display:flex;gap:10px;align-items:center;min-height:56px;padding:0 26px;border-radius:28px;font-size:16px;font-weight:600;white-space:nowrap;background:{{ t.bg }};color:{{ t.fg }};border:1px solid {{ t.bd }}"><i class="{{ t.icon }}" style="font-size:18px"></i>{{ t.label }}</button>
+      </sc-for>
+    </div>
+  </nav>
+
+  <div style="max-width:1280px;margin:0 auto;padding:28px 32px 0;display:flex;flex-direction:column;gap:20px">
+    <sc-if value="{{ tOverview }}" hint-placeholder-val="{{ true }}">
+      <div style="display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:18px">
+        <button onClick="{{ featured.onOpen }}" style="all:unset;cursor:pointer;grid-column:span 7;background:#7B1E2B;color:#fff;border-radius:26px;padding:34px;display:flex;flex-direction:column;gap:14px;min-height:300px;box-sizing:border-box" style-active="transform:scale(.99)">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;letter-spacing:1.5px;color:#F1D9A0;font-weight:600">ผลงานเด่น</span><span style="display:flex;gap:6px;align-items:center;font-size:13px;background:rgba(255,255,255,.12);padding:5px 12px;border-radius:20px"><i class="bi bi-patch-check-fill" style="color:#D4AF5A"></i>{{ featured.status }}</span></div>
+          <div style="font-family:'Noto Serif Thai',serif;font-size:30px;font-weight:700;line-height:1.35;text-wrap:balance">{{ featured.title }}</div>
+          <div style="font-size:16px;color:#F3E6E7;line-height:1.6">{{ featured.result }}</div>
+          <div style="margin-top:auto;display:flex;justify-content:space-between;align-items:center;padding-top:16px;border-top:1px solid rgba(255,255,255,.15);font-size:14px;color:#E4CBCE"><span>{{ featured.ref }} · หลักฐาน {{ featured.ev }} รายการ</span><span style="display:flex;gap:8px;align-items:center;color:#fff;font-weight:600">แตะเพื่อดูรายละเอียด<i class="bi bi-arrow-right-circle-fill" style="font-size:22px;color:#D4AF5A"></i></span></div>
+        </button>
+        <div style="grid-column:span 5;background:#fff;border:1px solid #E6DEDC;border-radius:26px;padding:28px">
+          <div style="font-size:13px;letter-spacing:1px;color:#7B1E2B;font-weight:700">หน้าที่ความรับผิดชอบหลัก</div>
+          <div style="display:flex;flex-direction:column;gap:14px;margin-top:18px">
+            <sc-for list="{{ duties }}" as="d" hint-placeholder-count="4">
+              <div style="display:flex;gap:14px;font-size:15.5px;line-height:1.55"><span style="width:32px;height:32px;border-radius:50%;background:#F6ECEC;color:#7B1E2B;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px">{{ d.no }}</span><span>{{ d.text }}</span></div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="grid-column:span 5;background:#fff;border:1px solid #E6DEDC;border-radius:26px;padding:28px">
+          <div style="font-size:13px;letter-spacing:1px;color:#7B1E2B;font-weight:700">ข้อมูลบุคลากร</div>
+          <div style="margin-top:10px">
+            <sc-for list="{{ profileRows }}" as="r" hint-placeholder-count="6">
+              <div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #F1EAE8;font-size:15px"><span style="color:#8A7F81;width:130px;flex-shrink:0">{{ r.k }}</span><span>{{ r.v }}</span></div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="grid-column:span 7;background:#fff;border:1px solid #E6DEDC;border-radius:26px;padding:28px">
+          <div style="font-size:13px;letter-spacing:1px;color:#7B1E2B;font-weight:700">เส้นทางผลการปฏิบัติงาน</div>
+          <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px">
+            <sc-for list="{{ chain }}" as="c" hint-placeholder-count="9">
+              <div style="background:#FAF7F6;border-radius:16px;padding:14px 16px;border-left:4px solid {{ c.bar }}">
+                <div style="font-size:12px;color:#8A7F81">{{ c.no }}</div>
+                <div style="font-size:15px;font-weight:600;margin-top:2px">{{ c.label }}</div>
+                <div style="font-size:13.5px;color:#6B6264;margin-top:2px">{{ c.val }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ tWorks }}">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;flex:1">
+          <sc-for list="{{ pfTypeChips }}" as="f" hint-placeholder-count="6">
+            <button onClick="{{ f.onClick }}" style="all:unset;cursor:pointer;min-height:48px;padding:0 20px;border-radius:24px;font-size:15px;display:flex;align-items:center;border:1px solid {{ f.bd }};background:{{ f.bg }};color:{{ f.fg }}">{{ f.label }}</button>
+          </sc-for>
+        </div>
+        <button onClick="{{ scrollL }}" style="all:unset;cursor:pointer;width:56px;height:56px;border-radius:50%;background:#fff;border:1px solid #D9CCCB;display:flex;align-items:center;justify-content:center;font-size:20px" style-active="background:#F6ECEC"><i class="bi bi-chevron-left"></i></button>
+        <button onClick="{{ scrollR }}" style="all:unset;cursor:pointer;width:56px;height:56px;border-radius:50%;background:#7B1E2B;color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px" style-active="background:#641824"><i class="bi bi-chevron-right"></i></button>
+      </div>
+      <div ref="{{ rowRef }}" style="display:flex;gap:18px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 2px 16px;scrollbar-width:none;-webkit-overflow-scrolling:touch">
+        <sc-for list="{{ pfCards }}" as="w" hint-placeholder-count="4">
+          <button onClick="{{ w.onOpen }}" style="all:unset;cursor:pointer;flex:0 0 360px;min-height:430px;scroll-snap-align:start;background:#fff;border:1px solid #E6DEDC;border-radius:26px;padding:28px;display:flex;flex-direction:column;gap:12px;box-sizing:border-box" style-active="transform:scale(.98)">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start"><span style="font-family:'Noto Serif Thai',serif;font-size:60px;font-weight:800;line-height:.9;color:#EAD9DA">{{ w.no }}</span><span style="display:flex;gap:6px;align-items:center;font-size:13px;font-weight:600;padding:6px 12px;border-radius:20px;background:{{ w.stBg }};color:{{ w.stFg }}"><i class="{{ w.stIcon }}"></i>{{ w.status }}</span></div>
+            <div style="display:flex;gap:8px;align-items:center;font-size:13.5px;color:#7B1E2B;font-weight:600;margin-top:8px"><i class="{{ w.icon }}"></i>{{ w.type }}<span style="color:#A59A9C;font-weight:400">· {{ w.period }}</span></div>
+            <div style="font-size:20px;font-weight:600;line-height:1.45;color:#2A0A0F;text-wrap:pretty">{{ w.title }}</div>
+            <div style="font-size:15px;color:#5A5052;line-height:1.6">{{ w.result }}</div>
+            <div style="margin-top:auto;display:flex;justify-content:space-between;align-items:center;padding-top:16px;border-top:1px solid #F1EAE8"><span style="font-size:14px;color:#6B6264"><i class="bi bi-paperclip"></i> หลักฐาน {{ w.ev }} รายการ</span><span style="width:44px;height:44px;border-radius:50%;background:#F6ECEC;color:#7B1E2B;display:flex;align-items:center;justify-content:center;font-size:18px"><i class="bi bi-arrow-up-right"></i></span></div>
+          </button>
+        </sc-for>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;justify-content:center;font-size:14px;color:#8A7F81"><i class="bi bi-hand-index"></i>ปัดซ้าย–ขวาเพื่อดูผลงาน · แตะการ์ดเพื่อดูรายละเอียด</div>
+    </sc-if>
+
+    <sc-if value="{{ tKpi }}">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:18px">
+        <sc-for list="{{ kpiCards }}" as="k" hint-placeholder-count="5">
+          <div style="background:#fff;border:1px solid #E6DEDC;border-radius:26px;padding:26px;display:flex;flex-direction:column;gap:18px">
+            <div style="display:flex;gap:18px;align-items:center">
+              <div style="width:108px;height:108px;border-radius:50%;background:conic-gradient(#7B1E2B {{ k.deg }}, #F1EAE8 0);display:flex;align-items:center;justify-content:center;flex-shrink:0"><div style="width:86px;height:86px;border-radius:50%;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font-family:'Noto Serif Thai',serif;font-size:28px;font-weight:700;color:#7B1E2B;line-height:1">{{ k.scoreS }}</span><span style="font-size:11px;color:#8A7F81">/ 5</span></div></div>
+              <div style="font-size:17px;font-weight:600;line-height:1.45">{{ k.name }}</div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+              <div style="background:#FAF7F6;border-radius:14px;padding:12px"><div style="font-size:12px;color:#8A7F81">เป้าหมาย</div><div style="font-size:18px;font-weight:600">{{ k.target }}</div></div>
+              <div style="background:#FAF7F6;border-radius:14px;padding:12px"><div style="font-size:12px;color:#8A7F81">ผลงาน</div><div style="font-size:18px;font-weight:700;color:#7B1E2B">{{ k.actual }}</div></div>
+              <div style="background:#FAF7F6;border-radius:14px;padding:12px"><div style="font-size:12px;color:#8A7F81">น้ำหนัก</div><div style="font-size:18px;font-weight:600">{{ k.weight }}%</div></div>
+            </div>
+            <div style="font-size:13px;color:#8A7F81"><i class="bi bi-database"></i> {{ k.source }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ tComp }}">
+      <div style="display:flex;gap:20px;font-size:14px;color:#6B6264;align-items:center"><span style="display:flex;gap:8px;align-items:center"><span style="width:22px;height:14px;background:#7B1E2B;border-radius:4px"></span>ระดับที่ประเมินได้</span><span style="display:flex;gap:8px;align-items:center"><span style="width:22px;height:14px;border:2px solid #D4AF5A;border-radius:4px"></span>ระดับที่คาดหวังตามตำแหน่ง</span></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:14px">
+        <sc-for list="{{ compCards }}" as="c" hint-placeholder-count="8">
+          <div style="background:#fff;border:1px solid #E6DEDC;border-radius:22px;padding:22px 24px;display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px"><div><div style="font-size:12.5px;color:#8A7F81">สมรรถนะ{{ c.group }}</div><div style="font-size:17px;font-weight:600;margin-top:2px">{{ c.name }}</div></div><div style="text-align:right"><div style="font-family:'Noto Serif Thai',serif;font-size:30px;font-weight:700;color:#7B1E2B;line-height:1">{{ c.actual }}</div><div style="font-size:12px;font-weight:600;color:{{ c.gapColor }};white-space:nowrap">{{ c.gapLabel }}</div></div></div>
+            <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">
+              <sc-for list="{{ c.segs }}" as="g" hint-placeholder-count="5"><div style="height:16px;border-radius:5px;background:{{ g.bg }};outline:{{ g.ol }};outline-offset:2px"></div></sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ tEvidence }}">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px">
+        <sc-for list="{{ evTiles }}" as="e" hint-placeholder-count="8">
+          <button onClick="{{ e.onOpen }}" style="all:unset;cursor:pointer;background:#fff;border:1px solid #E6DEDC;border-radius:22px;padding:22px;display:flex;flex-direction:column;gap:14px;min-height:200px;box-sizing:border-box" style-active="transform:scale(.98)">
+            <div style="width:60px;height:60px;border-radius:18px;background:#F6ECEC;color:#7B1E2B;display:flex;align-items:center;justify-content:center;font-size:28px"><i class="{{ e.icon }}"></i></div>
+            <div style="font-size:16px;font-weight:600;line-height:1.45">{{ e.name }}</div>
+            <div style="margin-top:auto;font-size:13px;color:#8A7F81">{{ e.kind }} · {{ e.date }}</div>
+          </button>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <div style="background:#fff;border:1px solid #E6DEDC;border-radius:26px;padding:28px 32px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) 120px;gap:28px;align-items:end;margin-top:8px">
+      <sc-for list="{{ signers }}" as="g" hint-placeholder-count="3">
+        <div style="text-align:center;font-size:14px">
+          <div style="height:44px"></div>
+          <div style="border-top:1px dotted #8A7F81;padding-top:8px">( {{ g.name }} )</div>
+          <div style="color:#6B6264;margin-top:2px">{{ g.role }}</div>
+        </div>
+      </sc-for>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:96px;height:96px;border:1px dashed #C7BCBD;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#A59A9C;font-size:32px"><i class="bi bi-qr-code"></i></div><div style="font-size:11.5px;color:#8A7F81">ตรวจสอบต้นฉบับ</div></div>
+    </div>
+  </div>
+
+  <sc-if value="{{ detailOpen }}">
+    <div onClick="{{ closeDetail }}" style="position:fixed;inset:0;z-index:60;background:rgba(26,6,10,.58);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px">
+      <div onClick="{{ stop }}" style="width:100%;max-width:920px;max-height:92vh;overflow:auto;background:#fff;border-radius:30px;box-shadow:0 30px 80px rgba(0,0,0,.35)">
+        <div style="background:#3A0B13;color:#fff;padding:26px 32px;display:flex;gap:16px;align-items:flex-start;position:sticky;top:0">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;gap:10px;align-items:center;font-size:14px;color:#F1D9A0"><i class="{{ detail.icon }}"></i>{{ detail.type }} · {{ detail.period }}</div>
+            <div style="font-family:'Noto Serif Thai',serif;font-size:30px;font-weight:700;line-height:1.35;margin-top:8px">{{ detail.title }}</div>
+          </div>
+          <button onClick="{{ closeDetail }}" style="all:unset;cursor:pointer;width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div style="padding:28px 32px;display:flex;flex-direction:column;gap:24px">
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+            <sc-for list="{{ detail.rows }}" as="r" hint-placeholder-count="6"><div style="background:#FAF7F6;border-radius:16px;padding:16px 18px"><div style="font-size:13px;color:#8A7F81">{{ r.k }}</div><div style="font-size:16.5px;margin-top:4px;line-height:1.5;font-weight:500">{{ r.v }}</div></div></sc-for>
+          </div>
+          <div>
+            <div style="font-size:13px;letter-spacing:1px;color:#7B1E2B;font-weight:700;margin-bottom:12px">หลักฐานที่เชื่อมโยง</div>
+            <sc-if value="{{ detailHasEv }}">
+              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">
+                <sc-for list="{{ detailEv }}" as="e" hint-placeholder-count="3"><div style="border:1px solid #E6DEDC;border-radius:16px;padding:14px 16px;display:flex;gap:12px;align-items:center"><i class="{{ e.icon }}" style="font-size:24px;color:#7B1E2B"></i><div><div style="font-size:14.5px;font-weight:500;line-height:1.4">{{ e.name }}</div><div style="font-size:12.5px;color:#8A7F81">{{ e.kind }} · {{ e.date }}</div></div></div></sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ detailNoEv }}"><div style="font-size:15px;color:#8A7F81;background:#FAF7F6;border-radius:16px;padding:18px">ยังไม่มีไฟล์หลักฐานเผยแพร่สำหรับผลงานนี้</div></sc-if>
+          </div>
+        </div>
+        <div style="padding:18px 32px 26px;display:flex;gap:12px;align-items:center;border-top:1px solid #F1EAE8">
+          <button onClick="{{ prevDetail }}" style="all:unset;cursor:pointer;min-height:56px;padding:0 24px;border-radius:28px;border:1px solid #D9CCCB;display:flex;gap:8px;align-items:center;font-size:15px"><i class="bi bi-chevron-left"></i>ก่อนหน้า</button>
+          <div style="flex:1;text-align:center;font-size:14px;color:#8A7F81">{{ detailPos }}</div>
+          <button onClick="{{ nextDetail }}" style="all:unset;cursor:pointer;min-height:56px;padding:0 24px;border-radius:28px;background:#7B1E2B;color:#fff;display:flex;gap:8px;align-items:center;font-size:15px;font-weight:600">ถัดไป<i class="bi bi-chevron-right"></i></button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ evOpen }}">
+    <div onClick="{{ closeEv }}" style="position:fixed;inset:0;z-index:60;background:rgba(26,6,10,.58);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px">
+      <div onClick="{{ stop }}" style="width:100%;max-width:760px;background:#fff;border-radius:30px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.35)">
+        <div style="aspect-ratio:16/9;background:#F4F1EF;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#A59A9C;position:relative"><i class="{{ evD.icon }}" style="font-size:64px;color:#C7A9AC"></i><span style="font-size:14px">ตัวอย่างไฟล์หลักฐาน</span>
+          <button onClick="{{ closeEv }}" style="all:unset;cursor:pointer;position:absolute;top:18px;right:18px;width:56px;height:56px;border-radius:50%;background:#fff;box-shadow:0 4px 14px rgba(0,0,0,.12);display:flex;align-items:center;justify-content:center;font-size:20px;color:#1F1A1B"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div style="padding:26px 30px 30px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;gap:10px;align-items:center"><span style="font-size:13px;font-weight:600;padding:4px 12px;border-radius:20px;background:{{ evD.stBg }};color:{{ evD.stFg }}">{{ evD.status }}</span><span style="font-size:14px;color:#8A7F81">{{ evD.kind }} · {{ evD.date }}</span></div>
+          <div style="font-family:'Noto Serif Thai',serif;font-size:26px;font-weight:700;line-height:1.4">{{ evD.name }}</div>
+          <div style="font-size:15px;color:#5A5052"><i class="bi bi-link-45deg"></i> {{ evD.workTitle }}</div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ chatOpen }}">
+  <div style="position:fixed;right:24px;bottom:100px;width:410px;height:min(660px,calc(100vh - 124px));background:#fff;border-radius:18px;box-shadow:0 24px 60px rgba(40,10,15,.25),0 2px 8px rgba(40,10,15,.1);display:flex;flex-direction:column;overflow:hidden;z-index:50;border:1px solid #E6DEDC">
+    <div style="background:#4A0F18;color:#fff;padding:16px 18px 0">
+      <div style="display:flex;gap:12px;align-items:center">
+        <div style="width:38px;height:38px;border-radius:12px;background:#7B1E2B;border:1px solid #B8913A;display:flex;align-items:center;justify-content:center;color:#F1D9A0;font-size:18px"><i class="bi bi-stars"></i></div>
+        <div style="flex:1;line-height:1.3"><div style="font-weight:700;font-size:15px">{{ assistantName }}</div><div style="font-size:12px;color:#D9B8BC;display:flex;gap:6px;align-items:center"><span style="width:7px;height:7px;border-radius:50%;background:{{ aiDot }}"></span>{{ aiStatusShort }}</div></div>
+        <button onClick="{{ resetInterview }}" title="เริ่มใหม่" style="all:unset;cursor:pointer;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:8px;color:#E4CBCE" style-hover="background:rgba(255,255,255,.1)"><i class="bi bi-arrow-counterclockwise"></i></button>
+        <button onClick="{{ toggleChat }}" style="all:unset;cursor:pointer;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:8px;color:#E4CBCE" style-hover="background:rgba(255,255,255,.1)"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div style="display:flex;gap:4px;margin-top:14px">
+        <sc-for list="{{ chatTabs }}" as="t" hint-placeholder-count="3">
+          <button onClick="{{ t.onClick }}" style="all:unset;cursor:pointer;flex:1;text-align:center;padding:9px 0;font-size:13px;font-weight:600;border-radius:10px 10px 0 0;background:{{ t.bg }};color:{{ t.fg }}"><i class="{{ t.icon }}"></i> {{ t.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+
+    <sc-if value="{{ modeInterview }}">
+      <div style="padding:12px 18px 10px;border-bottom:1px solid #EFE8E6;background:#FAF7F6">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#6B6264"><span>{{ ivLabel }}</span><span>{{ ivCount }}</span></div>
+        <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-top:8px">
+          <sc-for list="{{ ivSteps }}" as="s" hint-placeholder-count="8"><div style="height:4px;border-radius:4px;background:{{ s.bg }}"></div></sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ modeChat }}">
+      <div ref="{{ msgRef }}" style="flex:1;overflow:auto;padding:16px 16px 8px;display:flex;flex-direction:column;gap:10px;background:#fff">
+        <sc-for list="{{ chatMsgs }}" as="m" hint-placeholder-count="2">
+          <div style="display:flex;justify-content:{{ m.justify }}">
+            <div style="max-width:86%;padding:10px 13px;font-size:13.5px;line-height:1.6;white-space:pre-wrap;background:{{ m.bg }};color:{{ m.fg }};border-radius:{{ m.radius }}">{{ m.text }}</div>
+          </div>
+        </sc-for>
+        <sc-if value="{{ loading }}"><div style="display:flex;gap:4px;padding:10px 13px;background:#F4F1EF;border-radius:4px 14px 14px 14px;width:fit-content">{{ dots }}</div></sc-if>
+        <sc-if value="{{ showDraft }}">
+          <div style="border:1px solid #E3D3B0;background:#FDFAF3;border-radius:12px;padding:14px;margin-top:4px">
+            <div style="font-size:13px;font-weight:700;color:#4A0F18;display:flex;gap:6px;align-items:center"><i class="bi bi-file-earmark-text"></i>ร่างบันทึกผลงาน</div>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">
+              <sc-for list="{{ draftRows }}" as="d" hint-placeholder-count="4"><div style="font-size:12.5px;line-height:1.5"><span style="color:#8A7F81">{{ d.k }}:</span> {{ d.v }}</div></sc-for>
+            </div>
+            <sc-if value="{{ hasSummary }}"><div style="margin-top:10px;padding-top:10px;border-top:1px dashed #E3D3B0;font-size:13px;line-height:1.7;white-space:pre-wrap">{{ draftSummary }}</div></sc-if>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button onClick="{{ polish }}" style="all:unset;cursor:pointer;flex:1;text-align:center;border:1px solid #D9CCCB;background:#fff;padding:8px;border-radius:8px;font-size:12.5px;font-weight:600"><i class="bi bi-stars" style="color:#B8913A"></i> เรียบเรียงด้วย AI</button>
+              <button onClick="{{ saveDraft }}" style="all:unset;cursor:pointer;flex:1;text-align:center;background:#7B1E2B;color:#fff;padding:8px;border-radius:8px;font-size:12.5px;font-weight:600"><i class="bi bi-save"></i> บันทึกเข้าแฟ้ม</button>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+      <sc-if value="{{ hasChips }}">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 16px 0">
+          <sc-for list="{{ chips }}" as="c" hint-placeholder-count="3"><button onClick="{{ c.onClick }}" style="all:unset;cursor:pointer;font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid #E6DEDC;color:#5A5052" style-hover="border-color:#7B1E2B;color:#7B1E2B">{{ c.label }}</button></sc-for>
+        </div>
+      </sc-if>
+      <div style="padding:10px 12px 12px">
+        <sc-if value="{{ listening }}"><div style="font-size:12px;color:#C42838;padding:0 6px 6px;display:flex;gap:6px;align-items:center"><i class="bi bi-record-circle"></i>กำลังฟัง… พูดภาษาไทยได้เลย</div></sc-if>
+        <div style="display:flex;gap:8px;align-items:flex-end;border:1px solid #D9CCCB;border-radius:14px;padding:6px 6px 6px 12px;background:#fff">
+          <textarea value="{{ chatInput }}" onChange="{{ onInput }}" onKeyDown="{{ onKey }}" rows="2" placeholder="{{ inputPlaceholder }}" style="flex:1;border:0;outline:0;resize:none;font-size:13.5px;line-height:1.5;padding:4px 0;background:transparent"></textarea>
+          <button onClick="{{ toggleMic }}" title="พูดเพื่อพิมพ์ (ใช้เบราว์เซอร์)" style="all:unset;cursor:pointer;width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:{{ micBg }};color:{{ micFg }};animation:{{ micAnim }}"><i class="bi bi-mic-fill"></i></button>
+          <button onClick="{{ send }}" style="all:unset;cursor:pointer;width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#7B1E2B;color:#fff" style-hover="background:#641824"><i class="bi bi-send-fill"></i></button>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</sc-if>
+
+<sc-if value="{{ showHint }}">
+  <div style="position:fixed;right:100px;bottom:36px;background:#fff;border:1px solid #E6DEDC;box-shadow:0 8px 24px rgba(40,10,15,.12);border-radius:12px;padding:10px 14px;font-size:13px;z-index:49;max-width:240px;line-height:1.5"><b style="color:#4A0F18">ให้ AI ช่วยสัมภาษณ์</b><br><span style="color:#6B6264">เล่าผลงานด้วยเสียง ระบบจะจัดเป็นบันทึกให้</span></div>
+</sc-if>
+<button onClick="{{ toggleChat }}" style="all:unset;cursor:pointer;position:fixed;right:24px;bottom:24px;width:64px;height:64px;border-radius:50%;background:#7B1E2B;color:#F1D9A0;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 28px rgba(74,15,24,.4);z-index:51;border:2px solid #B8913A" style-hover="background:#641824">
+  {{ fabRing }}
+  <i class="{{ fabIcon }}" style="font-size:24px;position:relative"></i>
+</button>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;defaultView&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;admin&quot;,&quot;portfolio&quot;],&quot;default&quot;:&quot;admin&quot;,&quot;tsType&quot;:&quot;'admin'|'portfolio'&quot;},&quot;assistantName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;ผู้ช่วย AI แฟ้มสะสมงาน&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;showHint&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+const QUESTIONS = [
+  { k: 'ชื่องาน/โครงการ', q: 'เริ่มจากชื่องานหรือโครงการที่ต้องการบันทึกลงแฟ้มครับ', chips: ['งานประจำ', 'โครงการฝึกอบรม', 'งานนโยบาย'] },
+  { k: 'ผู้มอบหมาย/เอกสารสั่งการ', q: 'ได้รับมอบหมายจากใคร และผ่านช่องทางใด เช่น คำสั่ง สอศ. เลขที่ หรือบันทึกข้อความ', chips: ['คำสั่ง สอศ. ที่ …/2568', 'บันทึกข้อความ', 'มอบหมายด้วยวาจา'] },
+  { k: 'เป้าหมายและระยะเวลา', q: 'งานนี้มีเป้าหมายอะไร เริ่มและครบกำหนดเมื่อใด', chips: ['ต.ค. 2568 – ก.ย. 2569'] },
+  { k: 'บทบาทและการดำเนินงาน', q: 'ท่านมีบทบาทอย่างไร (ผู้รับผิดชอบหลัก/ร่วม) และดำเนินการอะไรบ้าง', chips: ['ผู้รับผิดชอบหลัก', 'ผู้รับผิดชอบร่วม', 'เลขานุการคณะทำงาน'] },
+  { k: 'ผลผลิต/ผลลัพธ์', q: 'ผลผลิตหรือผลลัพธ์ที่ได้คืออะไร ถ้ามีตัวเลขช่วยระบุด้วยครับ', chips: [] },
+  { k: 'หลักฐาน', q: 'มีหลักฐานอะไรยืนยันบ้าง', chips: ['คำสั่ง', 'รายงานสรุปผล', 'รายชื่อผู้เข้าร่วม', 'ภาพกิจกรรม', 'URL ผลงาน'] },
+  { k: 'ตัวชี้วัดที่เกี่ยวข้อง', q: 'งานนี้เชื่อมกับ KPI ข้อใด', chips: ['KPI 1 การจัดอบรมตามแผน', 'KPI 2 ครูผ่านการพัฒนา', 'KPI 4 ความทันเวลา'] },
+  { k: 'ผู้ตรวจสอบ/ผู้รับรอง', q: 'สุดท้าย ใครเป็นผู้ตรวจสอบและผู้รับรองผลงานนี้', chips: ['ผู้อำนวยการกลุ่ม', 'ผู้อำนวยการสำนัก'] }
+];
+const ACKS = ['รับทราบครับ', 'ขอบคุณครับ', 'ดีครับ', 'บันทึกไว้แล้วครับ'];
+const PROVIDERS = {
+  openrouter: { label: 'OpenRouter', sub: 'หลายโมเดลในที่เดียว', icon: 'bi bi-diagram-3', baseUrl: 'https://openrouter.ai/api/v1', model: 'google/gemini-2.5-flash', ph: 'sk-or-v1-…' },
+  google: { label: 'Google AI Studio', sub: 'Gemini API', icon: 'bi bi-google', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', ph: 'AIza…' },
+  local: { label: 'Local LLM', sub: 'Ollama / LM Studio', icon: 'bi bi-pc-display', baseUrl: 'http://localhost:11434/v1', model: 'llama3.1', ph: 'ไม่จำเป็นสำหรับ Ollama' },
+  custom: { label: 'กำหนดเอง', sub: 'OpenAI‑compatible', icon: 'bi bi-sliders', baseUrl: 'https://api.example.com/v1', model: '', ph: 'API Key' }
+};
+const ST = {
+  'รับรองแล้ว': ['#E7F2EA', '#1E6B3A', 'bi bi-patch-check-fill'],
+  'รอตรวจสอบ': ['#FFF4DB', '#8A5A00', 'bi bi-hourglass-split'],
+  'กำลังดำเนินการ': ['#E8EEF8', '#2B4C8C', 'bi bi-arrow-repeat'],
+  'รอหลักฐาน': ['#FBE9EA', '#9B1C2C', 'bi bi-exclamation-circle'],
+  'ตรวจแล้ว': ['#E7F2EA', '#1E6B3A', 'bi bi-check2']
+};
+const TYPE_ICON = { 'โครงการ': 'bi bi-kanban', 'งานประจำ': 'bi bi-briefcase', 'วิชาการ': 'bi bi-mortarboard', 'ยุทธศาสตร์': 'bi bi-bullseye', 'บริการ': 'bi bi-headset', 'เร่งด่วน': 'bi bi-lightning' };
+const EV_ICON = { PDF: 'bi bi-file-earmark-pdf', XLSX: 'bi bi-file-earmark-spreadsheet', 'ภาพ': 'bi bi-images', URL: 'bi bi-link-45deg', 'วิดีโอ': 'bi bi-camera-video' };
+const WORKS = [
+  { title: 'โครงการพัฒนาสมรรถนะครูอาชีวศึกษาด้านดิจิทัล (Digital Competency) รุ่นที่ 1–4', type: 'โครงการ', ref: 'คำสั่ง สอศ. ที่ 1234/2568', period: 'พ.ย. 68 – มี.ค. 69', result: 'ครูผ่านการอบรม 412 คน จากเป้าหมาย 400 คน', kpi: 'KPI 1, 2, 3', ev: 9, status: 'รับรองแล้ว' },
+  { title: 'จัดทำแผนพัฒนาบุคลากรรายบุคคล (ID Plan) ประจำปีงบประมาณ 2569', type: 'งานประจำ', ref: 'บันทึกข้อความ ที่ ศธ 0606/112', period: 'ต.ค. – ธ.ค. 68', result: 'บุคลากรจัดทำ ID Plan ครบร้อยละ 100', kpi: 'KPI 5', ev: 4, status: 'รับรองแล้ว' },
+  { title: 'พัฒนาหลักสูตรอบรมออนไลน์ “AI เพื่อการจัดการเรียนรู้สายอาชีพ”', type: 'วิชาการ', ref: 'คำสั่ง สอศ. ที่ 0457/2569', period: 'ม.ค. – พ.ค. 69', result: 'หลักสูตร 6 หน่วย 12 ชั่วโมง เผยแพร่บน Thai MOOC', kpi: 'KPI 2', ev: 5, status: 'รอตรวจสอบ' },
+  { title: 'ประชุมเชิงปฏิบัติการจัดทำมาตรฐานสมรรถนะครูผู้สอนสาขาช่างอุตสาหกรรม', type: 'ยุทธศาสตร์', ref: 'แผนปฏิบัติราชการ 2569', period: 'มิ.ย. – ส.ค. 69', result: 'ร่างมาตรฐานสมรรถนะ 5 สาขางาน', kpi: 'KPI 1', ev: 3, status: 'กำลังดำเนินการ' },
+  { title: 'รายงานผลการพัฒนาบุคลากรรอบ 6 เดือน เสนอผู้บริหาร', type: 'งานประจำ', ref: 'บันทึกข้อความ ที่ ศธ 0606/389', period: 'เม.ย. 69', result: 'เสนอรายงานภายในกำหนด ผู้บริหารใช้ประกอบการตัดสินใจ', kpi: 'KPI 4', ev: 2, status: 'รับรองแล้ว' },
+  { title: 'ประสานงานระบบ R-HRD ลงทะเบียนและติดตามผู้เข้ารับการอบรม', type: 'บริการ', ref: 'มอบหมายโดยผู้อำนวยการกลุ่ม', period: 'ตลอดปีงบประมาณ', result: 'ลงทะเบียนผู้เข้าอบรม 1,286 รายการ', kpi: 'KPI 1', ev: 0, status: 'รอหลักฐาน' },
+  { title: 'สรุปข้อมูลครูผู้ผ่านการพัฒนาตามนโยบายเร่งด่วนของกระทรวงศึกษาธิการ', type: 'เร่งด่วน', ref: 'หนังสือด่วนที่สุด ที่ ศธ 0606/ว 77', period: 'ก.พ. 69', result: 'จัดส่งข้อมูลภายใน 3 วันทำการ', kpi: 'KPI 4', ev: 3, status: 'รับรองแล้ว' }
+];
+const EVIDENCE = [
+  { name: 'คำสั่ง สอศ. ที่ 1234/2568 แต่งตั้งคณะทำงาน', kind: 'PDF', date: '8 พ.ย. 68', work: 'โครงการ Digital Competency', status: 'ตรวจแล้ว', checker: 'ผอ.กลุ่ม' },
+  { name: 'รายชื่อผู้ผ่านการอบรม 412 คน', kind: 'XLSX', date: '28 มี.ค. 69', work: 'โครงการ Digital Competency', status: 'ตรวจแล้ว', checker: 'ผอ.กลุ่ม' },
+  { name: 'ภาพกิจกรรมรุ่นที่ 1–4 (48 ภาพ)', kind: 'ภาพ', date: '30 มี.ค. 69', work: 'โครงการ Digital Competency', status: 'ตรวจแล้ว', checker: 'ผอ.กลุ่ม' },
+  { name: 'รายงานสรุปผลโครงการ', kind: 'PDF', date: '10 เม.ย. 69', work: 'โครงการ Digital Competency', status: 'ตรวจแล้ว', checker: 'ผอ.สำนัก' },
+  { name: 'บทเรียนออนไลน์บน Thai MOOC', kind: 'URL', date: '20 พ.ค. 69', work: 'หลักสูตร AI เพื่อการจัดการเรียนรู้', status: 'รอตรวจสอบ', checker: '—' },
+  { name: 'แบบประเมินความพึงพอใจ (Google Forms)', kind: 'URL', date: '30 มี.ค. 69', work: 'โครงการ Digital Competency', status: 'ตรวจแล้ว', checker: 'ผอ.กลุ่ม' },
+  { name: 'บันทึกข้อความเสนอรายงานรอบ 6 เดือน', kind: 'PDF', date: '22 เม.ย. 69', work: 'รายงานผลการพัฒนาบุคลากร', status: 'ตรวจแล้ว', checker: 'ผอ.สำนัก' },
+  { name: 'คลิปสรุปการประชุมเชิงปฏิบัติการ', kind: 'วิดีโอ', date: '14 ก.ค. 69', work: 'มาตรฐานสมรรถนะครูช่างอุตสาหกรรม', status: 'รอตรวจสอบ', checker: '—' }
+];
+const KPIS = [
+  { name: 'ร้อยละความสำเร็จของการจัดอบรมตามแผน', source: 'แผนปฏิบัติราชการ / R-HRD', weight: 30, target: '100%', actual: '96%', pct: 96, score: 4.6 },
+  { name: 'จำนวนครูที่ผ่านการพัฒนาสมรรถนะดิจิทัล', source: 'รายชื่อผู้ผ่านการอบรม', weight: 25, target: '400 คน', actual: '412 คน', pct: 100, score: 5 },
+  { name: 'ระดับความพึงพอใจของผู้เข้ารับการอบรม', source: 'แบบประเมินออนไลน์', weight: 15, target: '4.00', actual: '4.52', pct: 100, score: 5 },
+  { name: 'ความทันเวลาในการรายงานผล', source: 'ระบบสารบรรณ', weight: 15, target: '100%', actual: '90%', pct: 90, score: 4 },
+  { name: 'ร้อยละของบุคลากรที่มี ID Plan', source: 'ระบบ IDPlan', weight: 15, target: '100%', actual: '100%', pct: 100, score: 5 }
+];
+const COMPS = [
+  { group: 'หลัก', name: 'การมุ่งผลสัมฤทธิ์', exp: 3, actual: 4 },
+  { group: 'หลัก', name: 'การบริการที่ดี', exp: 3, actual: 3 },
+  { group: 'หลัก', name: 'การสั่งสมความเชี่ยวชาญในงานอาชีพ', exp: 3, actual: 4 },
+  { group: 'หลัก', name: 'การยึดมั่นในความถูกต้องและจริยธรรม', exp: 3, actual: 3 },
+  { group: 'หลัก', name: 'การทำงานเป็นทีม', exp: 3, actual: 4 },
+  { group: 'ตำแหน่ง', name: 'การคิดวิเคราะห์', exp: 3, actual: 3 },
+  { group: 'ตำแหน่ง', name: 'การพัฒนาศักยภาพคน', exp: 3, actual: 2 },
+  { group: 'ดิจิทัล', name: 'การใช้เทคโนโลยีดิจิทัลในงาน', exp: 3, actual: 4 }
+];
+const EV_WID = ['w0','w0','w0','w0','w2','w0','w4','w3'];
+WORKS.forEach((w, i) => { w.id = 'w' + i; });
+EVIDENCE.forEach((e, i) => { e.wid = EV_WID[i]; });
+const LS = 'bpcd_eport_ai_v1';
+
+class Component extends DCLogic {
+  constructor(p) {
+    super(p);
+    let ai = { provider: 'openrouter', baseUrl: PROVIDERS.openrouter.baseUrl, apiKey: '', model: PROVIDERS.openrouter.model };
+    try { const s = JSON.parse(localStorage.getItem(LS) || 'null'); if (s) ai = { ...ai, ...s }; } catch (e) {}
+    this.state = {
+      view: (p && p.defaultView) || 'admin', page: 'dashboard', typeFilter: 'ทั้งหมด', search: '',
+      works: WORKS, chatOpen: false, mode: 'interview', ai, testMsg: '', testOk: null,
+      ivStep: 0, ivAnswers: [], ivMsgs: [this.greet()], ivDone: false, draftSummary: '',
+      askMsgs: [{ role: 'bot', text: 'สอบถามเรื่องแฟ้มสะสมงาน KPI สมรรถนะ หรือให้ช่วยร่างข้อความได้เลยครับ' }],
+      chatInput: '', listening: false, loading: false, hintSeen: false,
+      role: 'admin', pfTab: 'overview', pfType: 'ทั้งหมด', pfDetail: null, pfEv: null
+    };
+    this.msgRef = React.createRef(); this.rowRef = React.createRef();
+  }
+  greet() { return { role: 'bot', text: 'สวัสดีครับ ผมจะช่วยสัมภาษณ์เพื่อบันทึกผลงานเข้าแฟ้ม 8 คำถามสั้น ๆ ตอบด้วยการพิมพ์หรือกดไมค์พูดได้เลย\n\n1/8 ' + QUESTIONS[0].q }; }
+  componentDidUpdate() { const el = this.msgRef.current; if (el) el.scrollTop = el.scrollHeight; }
+  componentWillUnmount() { if (this.rec) try { this.rec.stop(); } catch (e) {} }
+  saveAi(patch) { this.setState(s => { const ai = { ...s.ai, ...patch }; try { localStorage.setItem(LS, JSON.stringify(ai)); } catch (e) {} return { ai, testMsg: '' }; }); }
+  aiReady() { const a = this.state.ai; return !!(a.baseUrl && a.model && (a.apiKey || a.provider === 'local')); }
+  async callLLM(messages) {
+    const a = this.state.ai;
+    const headers = { 'Content-Type': 'application/json' };
+    if (a.apiKey) headers.Authorization = 'Bearer ' + a.apiKey;
+    if (a.provider === 'openrouter') { headers['HTTP-Referer'] = location.origin; headers['X-Title'] = 'BPCD e-Portfolio'; }
+    const r = await fetch(a.baseUrl.replace(/\/$/, '') + '/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model: a.model, messages, temperature: 0.4 }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((j.error && (j.error.message || j.error)) || ('HTTP ' + r.status));
+    return (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content || '').trim();
+  }
+  context() {
+    return 'ข้อมูลแฟ้ม: ผู้จัดทำ นางสาวพิมพ์ชนก วงศ์ประเสริฐ นักทรัพยากรบุคคลชำนาญการ ปีงบ 2569. ผลงาน: ' + this.state.works.map(w => w.title + ' [' + w.status + ']').join('; ') + '. KPI: ' + KPIS.map(k => k.name + ' ' + k.actual + '/' + k.target).join('; ');
+  }
+  send = async () => {
+    const text = this.state.chatInput.trim();
+    if (!text || this.state.loading) return;
+    if (this.rec && this.state.listening) this.rec.stop();
+    if (this.state.mode === 'interview') {
+      if (this.state.ivDone) { this.setState(s => ({ chatInput: '', ivMsgs: [...s.ivMsgs, { role: 'user', text }, { role: 'bot', text: 'ร่างบันทึกพร้อมแล้วครับ กด “บันทึกเข้าแฟ้ม” หรือเริ่มใหม่ที่ปุ่มด้านบน' }] })); return; }
+      this.setState(s => {
+        const step = s.ivStep + 1; const answers = [...s.ivAnswers, text]; const msgs = [...s.ivMsgs, { role: 'user', text }];
+        if (step < QUESTIONS.length) msgs.push({ role: 'bot', text: ACKS[step % ACKS.length] + '\n\n' + (step + 1) + '/8 ' + QUESTIONS[step].q });
+        else msgs.push({ role: 'bot', text: 'ครบทุกคำถามแล้วครับ ตรวจสอบร่างด้านล่าง กด “เรียบเรียงด้วย AI” เพื่อได้ข้อความทางการ (ใช้ token ครั้งเดียว)' });
+        return { chatInput: '', ivStep: step, ivAnswers: answers, ivMsgs: msgs, ivDone: step >= QUESTIONS.length };
+      });
+      return;
+    }
+    const msgs = [...this.state.askMsgs, { role: 'user', text }];
+    this.setState({ chatInput: '', askMsgs: msgs });
+    if (!this.aiReady()) { this.setState(s => ({ askMsgs: [...s.askMsgs, { role: 'bot', text: 'ผู้ดูแลระบบยังไม่ได้เปิดการเชื่อมต่อ AI ครับ ระหว่างนี้ใช้โหมดสัมภาษณ์ได้โดยไม่ต้องเชื่อมต่อ' }] })); return; }
+    this.setState({ loading: true });
+    try {
+      const hist = msgs.slice(-10).map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }));
+      const out = await this.callLLM([{ role: 'system', content: 'คุณคือผู้ช่วย AI ของระบบแฟ้มสะสมงานอิเล็กทรอนิกส์ สำนักพัฒนาสมรรถนะครูและบุคลากรอาชีวศึกษา สอศ. ตอบภาษาไทยสุภาพ กระชับ ถูกต้องตามแบบราชการ ไม่ตัดสินผลประเมินแทนผู้ประเมิน. ' + this.context() }, ...hist]);
+      this.setState(s => ({ loading: false, askMsgs: [...s.askMsgs, { role: 'bot', text: out || '(ไม่มีคำตอบ)' }] }));
+    } catch (e) { this.setState(s => ({ loading: false, askMsgs: [...s.askMsgs, { role: 'bot', text: 'เชื่อมต่อไม่สำเร็จ: ' + e.message }] })); }
+  };
+  polish = async () => {
+    if (!this.aiReady()) { this.setState(s => ({ ivMsgs: [...s.ivMsgs, { role: 'bot', text: 'ผู้ดูแลระบบยังไม่ได้เปิดการเชื่อมต่อ AI กดบันทึกร่างนี้เข้าแฟ้มได้เลยครับ' }] })); return; }
+    this.setState({ loading: true });
+    const data = QUESTIONS.map((q, i) => q.k + ': ' + (this.state.ivAnswers[i] || '-')).join('\n');
+    try {
+      const out = await this.callLLM([{ role: 'system', content: 'เรียบเรียงข้อมูลผลการปฏิบัติงานเป็นย่อหน้าภาษาไทยแบบราชการสำหรับแฟ้มสะสมงาน ไม่เกิน 120 คำ ห้ามแต่งข้อมูลเพิ่ม' }, { role: 'user', content: data }]);
+      this.setState({ loading: false, draftSummary: out });
+    } catch (e) { this.setState(s => ({ loading: false, ivMsgs: [...s.ivMsgs, { role: 'bot', text: 'เชื่อมต่อไม่สำเร็จ: ' + e.message }] })); }
+  };
+  saveDraft = () => {
+    const a = this.state.ivAnswers;
+    const evCount = (a[5] || '').split(/[,،、\s]+และ|,|、/).filter(x => x.trim()).length || 1;
+    const w = { id: 'n' + Date.now(), title: a[0] || 'ผลงานใหม่', type: 'โครงการ', ref: a[1] || '-', period: a[2] || '-', result: a[4] || '-', kpi: a[6] || '-', ev: evCount, status: 'รอตรวจสอบ' };
+    this.setState(s => ({ works: [w, ...s.works], ivMsgs: [...s.ivMsgs, { role: 'bot', text: 'บันทึก “' + w.title + '” เข้าแฟ้มแล้ว สถานะ: รอตรวจสอบ จากผู้บังคับบัญชา' }], ivDone: false, ivStep: 0, ivAnswers: [], draftSummary: '', view: 'admin', page: 'works', typeFilter: 'ทั้งหมด' }));
+    setTimeout(() => this.setState(s => ({ ivMsgs: [...s.ivMsgs, { role: 'bot', text: 'ต้องการบันทึกผลงานถัดไปไหมครับ\n\n1/8 ' + QUESTIONS[0].q }] })), 600);
+  };
+  testConn = async () => {
+    if (!this.aiReady()) { this.setState({ testMsg: 'กรุณากรอก Base URL, API Key และ Model', testOk: false }); return; }
+    this.setState({ testMsg: 'กำลังทดสอบ…', testOk: null });
+    try { const out = await this.callLLM([{ role: 'user', content: 'ตอบคำว่า OK เท่านั้น' }]); this.setState({ testMsg: 'เชื่อมต่อสำเร็จ · ' + out.slice(0, 30), testOk: true }); }
+    catch (e) { this.setState({ testMsg: 'ไม่สำเร็จ: ' + e.message, testOk: false }); }
+  };
+  toggleMic = () => {
+    if (this.state.listening) { this.rec && this.rec.stop(); return; }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { const k = this.state.mode === 'ask' ? 'askMsgs' : 'ivMsgs'; this.setState(s => ({ [k]: [...s[k], { role: 'bot', text: 'เบราว์เซอร์นี้ไม่รองรับการแปลงเสียงเป็นข้อความ แนะนำ Google Chrome หรือ Microsoft Edge' }] })); return; }
+    const rec = new SR(); rec.lang = 'th-TH'; rec.interimResults = true; rec.continuous = true;
+    const base = this.state.chatInput ? this.state.chatInput.trim() + ' ' : '';
+    rec.onresult = e => { let t = ''; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; this.setState({ chatInput: base + t }); };
+    rec.onend = () => this.setState({ listening: false });
+    rec.onerror = () => this.setState({ listening: false });
+    this.rec = rec; rec.start(); this.setState({ listening: true });
+  };
+  renderVals() {
+    const s = this.state, P = PROVIDERS[s.ai.provider] || PROVIDERS.custom;
+    const go = page => () => this.setState({ page, view: 'admin' });
+    const nav = [['dashboard', 'แดชบอร์ด', 'bi bi-speedometer2'], ['works', 'ผลงานและโครงการ', 'bi bi-kanban', s.works.length], ['evidence', 'หลักฐาน', 'bi bi-folder2-open', 2], ['kpi', 'KPI และสมรรถนะ', 'bi bi-graph-up-arrow'], ...(s.role === 'admin' ? [['settings', 'ตั้งค่าผู้ช่วย AI', 'bi bi-cpu']] : [])];
+    const titles = { dashboard: 'แดชบอร์ด', works: 'ผลงานและโครงการ', evidence: 'หลักฐาน', kpi: 'KPI และสมรรถนะ', settings: 'ตั้งค่าผู้ช่วย AI' };
+    const st = w => { const c = ST[w.status] || ST['รอตรวจสอบ']; return { ...w, stBg: c[0], stFg: c[1], stIcon: c[2], icon: TYPE_ICON[w.type] || 'bi bi-file-text' }; };
+    const q = s.search.trim();
+    const worksView = s.works.filter(w => (s.typeFilter === 'ทั้งหมด' || w.type === s.typeFilter) && (!q || (w.title + w.ref + w.result).includes(q))).map((w, i) => ({ ...st(w), no: i + 1 }));
+    const kpiScore = (KPIS.reduce((a, k) => a + k.score * k.weight, 0) / 100).toFixed(2);
+    const certified = s.works.filter(w => w.status === 'รับรองแล้ว').length;
+    const evTotal = s.works.reduce((a, w) => a + w.ev, 0);
+    const missing = s.works.filter(w => w.ev === 0);
+    const completeness = Math.round(100 * (s.works.length - missing.length) / s.works.length * 0.92);
+    const ready = this.aiReady();
+    const msgs = s.mode === 'ask' ? s.askMsgs : s.ivMsgs;
+    const tabs = [['interview', 'สัมภาษณ์', 'bi bi-mic'], ['ask', 'ถาม‑ตอบ', 'bi bi-chat-dots']];
+    const chips = s.mode === 'interview' && !s.ivDone ? (QUESTIONS[s.ivStep] || {}).chips || [] : s.mode === 'ask' ? ['สรุปผลงานเด่นของฉัน', 'KPI ใดยังต่ำกว่าเป้า', 'แนะนำการพัฒนาตนเอง'] : [];
+    const n = s.works.length, dIdx = s.works.findIndex(w => w.id === s.pfDetail), dW = dIdx >= 0 ? st(s.works[dIdx]) : null;
+    const openW = id => () => this.setState({ pfDetail: id });
+    const featured = s.works.find(w => w.status === 'รับรองแล้ว') || s.works[0];
+    const dEv = dW ? EVIDENCE.filter(e => e.wid === dW.id).map(e => ({ ...e, icon: EV_ICON[e.kind] })) : [];
+    const E = s.pfEv !== null ? EVIDENCE[s.pfEv] : null;
+    const pfVals = {
+      roles: [['staff', 'บุคลากร'], ['admin', 'ผู้ดูแลระบบ']].map(([k, label]) => ({ label, bg: s.role === k ? '#fff' : 'transparent', fg: s.role === k ? '#7B1E2B' : '#8A7F81', onClick: () => this.setState(x => ({ role: k, page: k === 'staff' && x.page === 'settings' ? 'dashboard' : x.page })) })),
+      roleLabel: s.role === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : 'บุคลากร · ผู้จัดทำแฟ้ม',
+      heroBadges: [{ icon: 'bi bi-award', label: 'ระดับชำนาญการ' }, { icon: 'bi bi-patch-check', label: 'ผลงานรับรองแล้ว ' + certified + ' รายการ' }, { icon: 'bi bi-mortarboard', label: 'ID Plan ครบถ้วน' }],
+      kpiDeg: Math.round(kpiScore / 5 * 360) + 'deg',
+      pfTabs: [['overview', 'ภาพรวม', 'bi bi-grid-1x2'], ['works', 'ผลงาน', 'bi bi-kanban'], ['kpi', 'ตัวชี้วัด', 'bi bi-bullseye'], ['comp', 'สมรรถนะ', 'bi bi-person-badge'], ['evidence', 'หลักฐาน', 'bi bi-folder2-open']].map(([k, label, icon]) => { const on = s.pfTab === k; return { label, icon, bg: on ? '#7B1E2B' : '#fff', fg: on ? '#fff' : '#3E3537', bd: on ? '#7B1E2B' : '#E6DEDC', onClick: () => this.setState({ pfTab: k }) }; }),
+      tOverview: s.pfTab === 'overview', tWorks: s.pfTab === 'works', tKpi: s.pfTab === 'kpi', tComp: s.pfTab === 'comp', tEvidence: s.pfTab === 'evidence',
+      featured: { ...st(featured), onOpen: openW(featured.id) },
+      pfTypeChips: ['ทั้งหมด', 'โครงการ', 'งานประจำ', 'วิชาการ', 'ยุทธศาสตร์', 'บริการ', 'เร่งด่วน'].map(t => { const on = s.pfType === t; return { label: t, bg: on ? '#7B1E2B' : '#fff', fg: on ? '#fff' : '#3E3537', bd: on ? '#7B1E2B' : '#D9CCCB', onClick: () => this.setState({ pfType: t }) }; }),
+      pfCards: s.works.filter(w => s.pfType === 'ทั้งหมด' || w.type === s.pfType).map((w, i) => ({ ...st(w), no: String(i + 1).padStart(2, '0'), onOpen: openW(w.id) })),
+      rowRef: this.rowRef,
+      scrollL: () => this.rowRef.current && this.rowRef.current.scrollBy({ left: -380, behavior: 'smooth' }),
+      scrollR: () => this.rowRef.current && this.rowRef.current.scrollBy({ left: 380, behavior: 'smooth' }),
+      kpiCards: KPIS.map(k => ({ ...k, deg: Math.round(k.score / 5 * 360) + 'deg', scoreS: k.score.toFixed(1) })),
+      compCards: COMPS.map(c => { const g = c.actual - c.exp; return { ...c, gapLabel: g > 0 ? 'สูงกว่าคาดหวัง +' + g : g < 0 ? 'ต่ำกว่าคาดหวัง ' + g : 'ตามเกณฑ์', gapColor: g < 0 ? '#C42838' : g > 0 ? '#1E6B3A' : '#6B6264', segs: [1, 2, 3, 4, 5].map(i => ({ bg: i <= c.actual ? '#7B1E2B' : '#EDE4E2', ol: i === c.exp ? '2px solid #D4AF5A' : '2px solid transparent' })) }; }),
+      evTiles: EVIDENCE.map((e, i) => ({ ...e, icon: EV_ICON[e.kind], onOpen: () => this.setState({ pfEv: i }) })),
+      detailOpen: !!dW,
+      detail: dW ? { ...dW, rows: [{ k: 'ผู้มอบหมาย / เอกสารอ้างอิง', v: dW.ref }, { k: 'ระยะเวลาดำเนินงาน', v: dW.period }, { k: 'ผลผลิต / ผลลัพธ์', v: dW.result }, { k: 'ตัวชี้วัดที่เชื่อมโยง', v: dW.kpi }, { k: 'จำนวนหลักฐาน', v: dW.ev + ' รายการ' }, { k: 'สถานะการรับรอง', v: dW.status }] } : { rows: [] },
+      detailEv: dEv, detailHasEv: dEv.length > 0, detailNoEv: dEv.length === 0,
+      detailPos: (dIdx + 1) + ' / ' + n,
+      closeDetail: () => this.setState({ pfDetail: null }), stop: e => e.stopPropagation(),
+      prevDetail: () => this.setState({ pfDetail: s.works[(dIdx - 1 + n) % n].id }), nextDetail: () => this.setState({ pfDetail: s.works[(dIdx + 1) % n].id }),
+      evOpen: !!E, closeEv: () => this.setState({ pfEv: null }),
+      evD: E ? { ...E, icon: EV_ICON[E.kind], stBg: ST[E.status][0], stFg: ST[E.status][1], workTitle: (s.works.find(w => w.id === E.wid) || {}).title || '-' } : {}
+    };
+    const dot = { animation: 'blink 1.2s infinite', width: 6, height: 6, borderRadius: '50%', background: '#8A7F81', display: 'inline-block' };
+    return {
+      ...pfVals,
+      isAdmin: s.view === 'admin', isPortfolio: s.view === 'portfolio',
+      pDashboard: s.page === 'dashboard', pWorks: s.page === 'works', pEvidence: s.page === 'evidence', pKpi: s.page === 'kpi', pSettings: s.page === 'settings' && s.role === 'admin',
+      pageTitle: titles[s.page],
+      navItems: nav.map(([k, label, icon, badge]) => ({ label, icon, badge: badge || '', bg: s.page === k ? '#7B1E2B' : 'transparent', fg: s.page === k ? '#fff' : '#E4CBCE', onClick: go(k) })),
+      goPortfolio: () => { this.setState({ view: 'portfolio' }); window.scrollTo(0, 0); }, goAdmin: () => this.setState({ view: 'admin' }), goWorks: go('works'),
+      doPrint: () => window.print(),
+      search: s.search, onSearch: e => this.setState({ search: e.target.value, page: s.page === 'dashboard' ? 'works' : s.page }),
+      profile: { name: 'นางสาวพิมพ์ชนก วงศ์ประเสริฐ', short: 'พิมพ์ชนก ว.', position: 'นักทรัพยากรบุคคลชำนาญการ', group: 'กลุ่มพัฒนาครูและบุคลากรทางการศึกษา' },
+      stats: [
+        { label: 'ผลงานทั้งหมด', value: s.works.length, unit: 'รายการ', note: 'รับรองแล้ว ' + certified + ' รายการ', icon: 'bi bi-kanban' },
+        { label: 'หลักฐาน', value: evTotal, unit: 'ไฟล์', note: 'รอตรวจสอบ 2 · ขาดหลักฐาน ' + missing.length + ' งาน', icon: 'bi bi-folder2-open' },
+        { label: 'คะแนน KPI ถ่วงน้ำหนัก', value: kpiScore, unit: '/ 5.00', note: 'บรรลุเป้าหมาย 3 จาก 5 ตัวชี้วัด', icon: 'bi bi-graph-up-arrow' },
+        { label: 'สมรรถนะตามเกณฑ์', value: '7/8', unit: 'ด้าน', note: 'ต่ำกว่าคาดหวัง 1 ด้าน', icon: 'bi bi-person-check' }
+      ],
+      chain: [['บุคลากร', '1 คน'], ['ตำแหน่ง', 'ชำนาญการ'], ['หน้าที่', '4 ด้าน'], ['งานที่มอบหมาย', s.works.length + ' งาน'], ['การดำเนินงาน', '5 ดำเนินการแล้ว'], ['ผลงาน', certified + ' รับรอง'], ['หลักฐาน', evTotal + ' ไฟล์'], ['KPI', '5 ตัวชี้วัด'], ['การประเมิน', 'รอบ 1 เสร็จ']].map(([label, val], i) => ({ no: String(i + 1).padStart(2, '0'), label, val, bar: i < 7 ? '#7B1E2B' : i === 7 ? '#B8913A' : '#E6DEDC' })),
+      recentWorks: s.works.slice(0, 5).map(st),
+      insights: [
+        ...missing.map(w => ({ icon: 'bi bi-exclamation-triangle-fill', color: '#C42838', text: '“' + w.title.slice(0, 42) + '…” ยังไม่มีหลักฐานแนบ' })),
+        { icon: 'bi bi-arrow-down-right-circle-fill', color: '#B8913A', text: 'KPI ความทันเวลาในการรายงานผล ได้ 90% ต่ำกว่าเป้าหมาย 100%' },
+        { icon: 'bi bi-lightbulb-fill', color: '#2B4C8C', text: 'สมรรถนะ “การพัฒนาศักยภาพคน” ต่ำกว่าระดับคาดหวัง 1 ระดับ แนะนำเพิ่มใน ID Plan รอบถัดไป' }
+      ],
+      completeness, completenessW: completeness + '%',
+      checklist: [['ข้อมูลบุคลากรและตำแหน่ง', 1], ['คำสั่งมอบหมายงาน', 1], ['ผลการดำเนินงานโครงการ', 1], ['หลักฐานครบทุกผลงาน', missing.length === 0], ['ผลประเมินรอบ 2 รับรอง', 0]].map(([label, ok]) => ({ label, icon: ok ? 'bi bi-check-circle-fill' : 'bi bi-circle', color: ok ? '#1E6B3A' : '#C7BCBD', fg: ok ? '#1F1A1B' : '#8A7F81' })),
+      typeFilters: ['ทั้งหมด', 'โครงการ', 'งานประจำ', 'วิชาการ', 'ยุทธศาสตร์', 'บริการ', 'เร่งด่วน'].map(t => { const on = s.typeFilter === t; return { label: t, bg: on ? '#7B1E2B' : '#fff', fg: on ? '#fff' : '#3E3537', bd: on ? '#7B1E2B' : '#D9CCCB', onClick: () => this.setState({ typeFilter: t }) }; }),
+      worksView, worksEmpty: worksView.length === 0,
+      evidence: EVIDENCE.map(e => ({ ...e, icon: EV_ICON[e.kind] })),
+      evidenceView: EVIDENCE.filter(e => !q || (e.name + e.work).includes(q)).map(e => { const c = ST[e.status]; return { ...e, icon: EV_ICON[e.kind], stBg: c[0], stFg: c[1] }; }),
+      kpis: KPIS.map(k => ({ ...k, w: k.pct + '%', pct: k.pct + '%', bar: k.pct >= 100 ? '#1E6B3A' : '#B8913A', score: k.score.toFixed(2) })), kpiScore,
+      comps: COMPS.map(c => { const g = c.actual - c.exp; return { ...c, w: (c.actual / 5 * 100) + '%', expLeft: 'calc(' + (c.exp / 5 * 100) + '% - 1px)', gapLabel: g > 0 ? 'สูงกว่าคาดหวัง +' + g : g < 0 ? 'ต่ำกว่าคาดหวัง ' + g : 'ตามเกณฑ์', gapColor: g < 0 ? '#C42838' : g > 0 ? '#1E6B3A' : '#6B6264' }; }),
+      providers: Object.keys(PROVIDERS).map(k => { const p = PROVIDERS[k], on = s.ai.provider === k; return { label: p.label, sub: p.sub, icon: p.icon, bd: on ? '#7B1E2B' : '#E6DEDC', bg: on ? '#F6ECEC' : '#fff', onClick: () => this.saveAi({ provider: k, baseUrl: p.baseUrl, model: p.model }) }; }),
+      ai: s.ai, keyPlaceholder: P.ph,
+      onBaseUrl: e => this.saveAi({ baseUrl: e.target.value }), onApiKey: e => this.saveAi({ apiKey: e.target.value }), onModel: e => this.saveAi({ model: e.target.value }),
+      testConn: this.testConn, testMsg: s.testMsg, testColor: s.testOk === true ? '#1E6B3A' : s.testOk === false ? '#C42838' : '#6B6264',
+      aiStatusText: ready ? 'เชื่อมต่อ ' + P.label + ' · ' + s.ai.model : (s.role === 'admin' ? 'ยังไม่เชื่อมต่อ API — ตั้งค่าได้ที่เมนู “ตั้งค่าผู้ช่วย AI”' : 'ผู้ดูแลระบบยังไม่เปิดการเชื่อมต่อ · โหมดสัมภาษณ์ใช้งานได้ทันที'),
+      aiStatusShort: ready ? P.label + ' · ' + s.ai.model : 'ออฟไลน์ · สัมภาษณ์ได้โดยไม่ใช้ token', aiDot: ready ? '#5FD08A' : '#D9B8BC',
+      pfStats: [{ value: s.works.length, label: 'ผลงานในปีงบประมาณ' }, { value: '412', label: 'ครูที่ได้รับการพัฒนา' }, { value: kpiScore, label: 'คะแนน KPI จาก 5.00' }, { value: '7/8', label: 'สมรรถนะผ่านเกณฑ์' }],
+      profileRows: [{ k: 'ตำแหน่ง', v: 'นักทรัพยากรบุคคล' }, { k: 'ระดับ', v: 'ชำนาญการ' }, { k: 'สังกัด', v: 'กลุ่มพัฒนาครูและบุคลากรทางการศึกษา' }, { k: 'ผู้บังคับบัญชา', v: 'ผู้อำนวยการกลุ่ม' }, { k: 'รอบการประเมิน', v: '1 ต.ค. 2568 – 30 ก.ย. 2569' }, { k: 'แหล่งข้อมูล', v: 'HR · IDPlan · R-HRD · สารบรรณ' }],
+      duties: ['วางแผนและดำเนินโครงการพัฒนาสมรรถนะครูและบุคลากรอาชีวศึกษา', 'จัดทำและติดตามแผนพัฒนาบุคลากรรายบุคคล (ID Plan)', 'พัฒนาหลักสูตรและสื่อการอบรมรูปแบบออนไลน์', 'รวบรวม วิเคราะห์ และรายงานผลการพัฒนาบุคลากรต่อผู้บริหาร'].map((text, i) => ({ no: i + 1, text })),
+      pfWorks: s.works.filter(w => w.status !== 'รอหลักฐาน').map((w, i) => ({ ...st(w), no: String(i + 1).padStart(2, '0') })),
+      signers: [{ name: 'นางสาวพิมพ์ชนก วงศ์ประเสริฐ', role: 'ผู้จัดทำ' }, { name: '.................................', role: 'ผู้ตรวจสอบ / ผู้อำนวยการกลุ่ม' }, { name: '.................................', role: 'ผู้รับรอง / ผู้อำนวยการสำนัก' }],
+      startInterview: () => this.setState({ chatOpen: true, mode: 'interview', hintSeen: true }),
+      chatOpen: s.chatOpen, toggleChat: () => this.setState(x => ({ chatOpen: !x.chatOpen, hintSeen: true })),
+      showHint: !s.chatOpen && !s.hintSeen && this.props.showHint !== false,
+      fabIcon: s.chatOpen ? 'bi bi-x-lg' : 'bi bi-stars',
+      fabRing: s.chatOpen ? null : React.createElement('span', { style: { position: 'absolute', inset: -2, borderRadius: '50%', border: '2px solid #B8913A', animation: 'ringPulse 2.2s ease-out infinite', pointerEvents: 'none' } }),
+      assistantName: this.props.assistantName || 'ผู้ช่วย AI แฟ้มสะสมงาน',
+      chatTabs: tabs.map(([k, label, icon]) => ({ label, icon, bg: s.mode === k ? '#fff' : 'transparent', fg: s.mode === k ? '#4A0F18' : '#E4CBCE', onClick: () => this.setState({ mode: k }) })),
+      modeInterview: s.mode === 'interview', modeSettings: s.mode === 'settings', modeChat: s.mode !== 'settings',
+      resetInterview: () => this.setState(x => x.mode === 'ask' ? { askMsgs: x.askMsgs.slice(0, 1) } : { ivStep: 0, ivAnswers: [], ivMsgs: [this.greet()], ivDone: false, draftSummary: '' }),
+      ivLabel: s.ivDone ? 'สัมภาษณ์ครบแล้ว' : 'หัวข้อ: ' + QUESTIONS[s.ivStep].k, ivCount: Math.min(s.ivStep, 8) + ' / 8',
+      ivSteps: QUESTIONS.map((_, i) => ({ bg: i < s.ivStep ? '#7B1E2B' : i === s.ivStep ? '#B8913A' : '#E6DEDC' })),
+      chatMsgs: msgs.map(m => m.role === 'user' ? { text: m.text, justify: 'flex-end', bg: '#7B1E2B', fg: '#fff', radius: '14px 4px 14px 14px' } : { text: m.text, justify: 'flex-start', bg: '#F4F1EF', fg: '#1F1A1B', radius: '4px 14px 14px 14px' }),
+      msgRef: this.msgRef, loading: s.loading,
+      dots: [0, 1, 2].map(i => React.createElement('span', { key: i, style: { ...dot, animationDelay: i * 0.2 + 's' } })),
+      showDraft: s.mode === 'interview' && s.ivDone,
+      draftRows: QUESTIONS.map((q2, i) => ({ k: q2.k, v: s.ivAnswers[i] || '-' })),
+      hasSummary: !!s.draftSummary, draftSummary: s.draftSummary, polish: this.polish, saveDraft: this.saveDraft,
+      chips: chips.map(label => ({ label, onClick: () => this.setState(x => ({ chatInput: (x.chatInput ? x.chatInput + ' ' : '') + label })) })), hasChips: chips.length > 0,
+      listening: s.listening, toggleMic: this.toggleMic,
+      micBg: s.listening ? '#C42838' : '#F6ECEC', micFg: s.listening ? '#fff' : '#7B1E2B', micAnim: s.listening ? 'micPulse 1.4s infinite' : 'none',
+      chatInput: s.chatInput, onInput: e => this.setState({ chatInput: e.target.value }),
+      onKey: e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.send(); } },
+      send: this.send,
+      inputPlaceholder: s.mode === 'interview' ? 'พิมพ์คำตอบ หรือกดไมค์เพื่อพูด…' : 'ถามผู้ช่วย AI…'
+    };
+  }
+}
+
+</script>
+</body>
+</html>
