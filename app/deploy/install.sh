@@ -299,6 +299,16 @@ if systemctl is-active --quiet "$APP_NAME" && curl -fsS -o /dev/null "http://127
   ok "แอปตอบสนองที่ http://127.0.0.1:$APP_PORT"
 elif [ -f "$UNIT" ]; then
   problem "แอปยังไม่ทำงาน — ดู log:  journalctl -u $APP_NAME -n 50 --no-pager"
+  if [ -f "$ENV_FILE" ] && ! runuser -u "$APP_USER" -- test -r "$ENV_FILE"; then
+    info "สาเหตุ: ผู้ใช้ '$APP_USER' อ่าน $ENV_FILE ไม่ได้ — แก้:  chown root:$APP_USER $ENV_FILE && chmod 640 $ENV_FILE"
+  fi
+  dburl="$(grep -E '^DATABASE_URL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+  if [ -n "$dburl" ] && have psql && ! psql "$dburl" -tAc 'SELECT 1' >/dev/null 2>&1; then
+    info "สาเหตุ: เชื่อมต่อฐานข้อมูลด้วย DATABASE_URL ใน .env ไม่ได้ (รหัสผ่าน/ชื่อผู้ใช้ไม่ตรง?)"
+    info "แก้: ตั้งรหัสผ่านใหม่ให้ตรงกับ .env:  runuser -u postgres -- psql -c \"ALTER ROLE $DB_USER PASSWORD '<รหัสใน .env>'\""
+  fi
+  echo "  ---- log ล่าสุด ----"
+  journalctl -u "$APP_NAME" -n 15 --no-pager -o cat 2>/dev/null | sed 's/^/  | /' || true
 fi
 
 # ---------- 6. nginx reverse proxy ----------
