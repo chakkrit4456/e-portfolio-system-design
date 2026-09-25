@@ -47,6 +47,31 @@ npm start                 # หรือ npm run dev (restart อัตโนม
 
 **เปลี่ยนรหัสผ่านทันทีหลังเข้าระบบ** (คลิกวงกลมชื่อมุมขวาบน → เปลี่ยนรหัสผ่าน)
 
+## การรันประจำวัน (หลังตั้งค่าครั้งแรกแล้ว)
+
+**เริ่มระบบ**
+
+```bash
+docker compose up -d   # เปิด PostgreSQL (ถ้ายังไม่ได้เปิด)
+npm start               # รันเซิร์ฟเวอร์ครั้งเดียว
+# หรือ
+npm run dev             # โหมดพัฒนา, restart อัตโนมัติเมื่อแก้โค้ด
+```
+
+เปิด http://localhost:3000
+
+**หยุดระบบ**
+
+- กด `Ctrl+C` ในหน้าต่างเทอร์มินัลที่รัน `npm start` / `npm run dev` เพื่อหยุดเซิร์ฟเวอร์
+- หยุด PostgreSQL (ถ้าต้องการ): `docker compose stop` (ข้อมูลยังอยู่, เปิดใหม่ด้วย `docker compose up -d`) หรือ `docker compose down` (ลบ container แต่ข้อมูลยังอยู่ใน volume `pgdata`) — **ห้ามใช้ `docker compose down -v`** เพราะจะลบข้อมูลทั้งหมดถาวร
+
+ถ้าลืม PID หรือรันเซิร์ฟเวอร์แบบ background แล้วหาหน้าต่างเทอร์มินัลไม่เจอ (Windows PowerShell):
+
+```powershell
+Get-NetTCPConnection -LocalPort 3000 | Select-Object -ExpandProperty OwningProcess -Unique
+Stop-Process -Id <PID> -Force
+```
+
 ## ความสามารถ
 
 - **แดชบอร์ด** — สถิติผลงาน/หลักฐาน/KPI/สมรรถนะ, เส้นทางข้อมูล 9 ขั้น, ข้อสังเกต, ความครบถ้วนของแฟ้ม (คำนวณจากข้อมูลจริง)
