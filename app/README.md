@@ -72,6 +72,28 @@ Get-NetTCPConnection -LocalPort 3000 | Select-Object -ExpandProperty OwningProce
 Stop-Process -Id <PID> -Force
 ```
 
+## ติดตั้งบน Production (Debian 13 / TurnKey Linux Node.js)
+
+คัดลอกซอร์สโค้ดขึ้นเซิร์ฟเวอร์ (เช่น `git clone`) แล้วรันด้วย root:
+
+```bash
+bash app/deploy/install.sh --check   # ตรวจอย่างเดียว บอกว่าขาดอะไรและติดตั้งอย่างไร
+bash app/deploy/install.sh           # ติดตั้ง/อัปเดตแบบถามทีละขั้น (รันซ้ำได้)
+```
+
+สคริปต์ตรวจและช่วยติดตั้ง Node.js ≥ 20.6, PostgreSQL (สร้างฐานข้อมูล UTF8), คัดลอกแอปไป `/opt/bpcd-eportfolio`, สร้าง `.env` ด้วยค่าสุ่ม, systemd service `bpcd-eportfolio` และ nginx reverse proxy — ไม่เขียนทับ `.env` และ `uploads/` เดิม
+
+## ติดตั้งบน Production (Debian 13 / TurnKey Linux Node.js)
+
+คัดลอกซอร์สโค้ดขึ้นเซิร์ฟเวอร์ (เช่น `git clone`) แล้วรันด้วย root:
+
+```bash
+bash app/deploy/install.sh --check   # ตรวจอย่างเดียว บอกว่าขาดอะไรและติดตั้งอย่างไร
+bash app/deploy/install.sh           # ติดตั้ง/อัปเดตแบบถามทีละขั้น (รันซ้ำได้)
+```
+
+สคริปต์ตรวจและช่วยติดตั้ง Node.js ≥ 20.6, PostgreSQL (สร้างฐานข้อมูล UTF8), คัดลอกแอปไป `/opt/bpcd-eportfolio`, สร้าง `.env` ด้วยค่าสุ่ม, systemd service `bpcd-eportfolio` และ nginx reverse proxy — ไม่เขียนทับ `.env` และ `uploads/` เดิม
+
 ## ความสามารถ
 
 - **แดชบอร์ด** — สถิติผลงาน/หลักฐาน/KPI/สมรรถนะ, เส้นทางข้อมูล 9 ขั้น, ข้อสังเกต, ความครบถ้วนของแฟ้ม (คำนวณจากข้อมูลจริง)
