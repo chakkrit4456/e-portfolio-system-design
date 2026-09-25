@@ -239,7 +239,7 @@ elif [ -d "$APP_DIR" ]; then
       [ "$pg_ok" = 1 ] && as_pg psql -qc "ALTER ROLE \"$DB_USER\" PASSWORD '$DB_PASS'"
     fi
     SEED_PASS="$(openssl rand -base64 12 | tr -d '/+=')"
-    use_https=false; ask "จะใช้งานผ่าน HTTPS (แนะนำสำหรับ production)?" Y && use_https=true
+    use_https=false; ask "ติดตั้ง SSL (https://) เสร็จแล้วหรือยัง? (ถ้ายัง ตอบ n แล้วค่อยตั้ง COOKIE_SECURE=true ภายหลัง)" N && use_https=true
     umask 077
     cat > "$ENV_FILE" <<EOF
 DATABASE_URL=postgres://$DB_USER:$DB_PASS@localhost:5432/$DB_NAME
@@ -313,6 +313,11 @@ elif [ -f "$UNIT" ]; then
   fi
   echo "  ---- log ล่าสุด ----"
   journalctl -u "$APP_NAME" -n 15 --no-pager -o cat 2>/dev/null | sed 's/^/  | /' || true
+fi
+
+if grep -qE "^COOKIE_SECURE=true" "$ENV_FILE" 2>/dev/null && ! grep -rqs "listen.*443" /etc/nginx/sites-enabled/; then
+  problem "COOKIE_SECURE=true แต่ nginx ยังไม่มี HTTPS — login จะขึ้น error CSRF"
+  info "แก้: ตั้ง SSL ให้เสร็จ หรือแก้ COOKIE_SECURE=false ใน $ENV_FILE แล้ว systemctl restart $APP_NAME"
 fi
 
 # ---------- 6. nginx reverse proxy ----------

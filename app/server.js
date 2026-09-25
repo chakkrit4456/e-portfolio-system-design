@@ -103,7 +103,13 @@ app.get('/api/csrf', (req, res) => res.json({ token: req.session.csrfToken }));
 app.use('/api', (req, res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   const token = req.get('X-CSRF-Token');
-  if (!token || token !== req.session.csrfToken) return res.status(403).json({ error: 'คำขอไม่ถูกต้อง (CSRF) กรุณาโหลดหน้าใหม่' });
+  if (!token || token !== req.session.csrfToken) {
+    if (COOKIE_SECURE && !req.secure) {
+      console.warn('CSRF failed: COOKIE_SECURE=true but request is not HTTPS — use https:// or set COOKIE_SECURE=false');
+      return res.status(403).json({ error: 'ระบบตั้งค่าให้ใช้ HTTPS เท่านั้น กรุณาเข้าผ่าน https://', csrf: false });
+    }
+    return res.status(403).json({ error: 'คำขอไม่ถูกต้อง (CSRF) กรุณาโหลดหน้าใหม่', csrf: true });
+  }
   next();
 });
 

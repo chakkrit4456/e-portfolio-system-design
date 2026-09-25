@@ -69,7 +69,7 @@ async function ensureCsrfToken() {
   return CSRF_TOKEN;
 }
 
-async function api(url, opts = {}) {
+async function api(url, opts = {}, retried = false) {
   const o = { credentials: 'same-origin', ...opts };
   const method = (o.method || 'GET').toUpperCase();
   if (o.body && !(o.body instanceof FormData)) {
@@ -81,6 +81,8 @@ async function api(url, opts = {}) {
   }
   const r = await fetch(url, o);
   const j = await r.json().catch(() => ({}));
+  // token เก่า (session หมดอายุ/เซิร์ฟเวอร์รีสตาร์ท) — ขอ token ใหม่แล้วลองอีกครั้ง
+  if (r.status === 403 && j.csrf && !retried) { CSRF_TOKEN = ''; return api(url, opts, true); }
   if (r.status === 401 && url !== '/api/login') { S.me = null; S.data = null; CSRF_TOKEN = ''; render(); }
   if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
   if (url === '/api/login' && j.csrfToken) CSRF_TOKEN = j.csrfToken;
