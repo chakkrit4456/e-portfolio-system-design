@@ -13,7 +13,7 @@
 #   2. ตรวจ Node.js >= 20.6 และ npm
 #   3. ตรวจ/ติดตั้ง PostgreSQL และสร้างผู้ใช้+ฐานข้อมูล UTF8
 #   4. คัดลอกโค้ดไป APP_DIR, ติดตั้ง dependencies, สร้าง .env (ไม่ทับของเดิม)
-#   5. สร้าง systemd service และเริ่มระบบ
+#   5. สร้าง systemd service และเริ่มระบบ, ตั้ง/รีเซ็ตรหัสผ่าน admin
 #   6. ตั้ง nginx reverse proxy (+ แนะนำ HTTPS)
 # =============================================================================
 set -euo pipefail
@@ -318,6 +318,32 @@ fi
 if grep -qE "^COOKIE_SECURE=true" "$ENV_FILE" 2>/dev/null && ! grep -rqs "listen.*443" /etc/nginx/sites-enabled/; then
   problem "COOKIE_SECURE=true แต่ nginx ยังไม่มี HTTPS — login จะขึ้น error CSRF"
   info "แก้: ตั้ง SSL ให้เสร็จ หรือแก้ COOKIE_SECURE=false ใน $ENV_FILE แล้ว systemctl restart $APP_NAME"
+fi
+
+# ---------- 5b. รหัสผ่านผู้ดูแลระบบ ----------
+step "5b. รหัสผ่านผู้ดูแลระบบ (admin)"
+admin_exists=""
+if [ "$pg_ok" = 1 ] && [ "$(id -u)" -eq 0 ]; then
+  admin_exists="$(as_pg psql -d "$DB_NAME" -tAc "SELECT 1 FROM users WHERE username='admin'" 2>/dev/null || true)"
+fi
+if [ "$admin_exists" != 1 ]; then
+  warn "ยังไม่มีบัญชี admin (แอปจะสร้างให้เมื่อเริ่มทำงานสำเร็จครั้งแรก) — รันสคริปต์นี้อีกครั้งเพื่อตั้งรหัสผ่าน"
+elif [ ! -d "$APP_DIR/node_modules/bcryptjs" ]; then
+  warn "ไม่พบ $APP_DIR/node_modules/bcryptjs — ติดตั้งแอป (ขั้นที่ 4) ก่อนตั้งรหัสผ่าน"
+else
+  ok "มีบัญชี admin แล้ว"
+  if [ "$ASSUME_YES" = 0 ] && ask "ตั้ง/เปลี่ยนรหัสผ่าน admin ตอนนี้? (ปลดล็อกบัญชีด้วย)" N; then
+    while :; do
+      read -r -s -p "  ?  รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร): " P1; echo
+      read -r -s -p "  ?  ยืนยันรหัสผ่านอีกครั้ง: " P2; echo
+      if [ "${#P1}" -lt 8 ]; then warn "สั้นเกินไป"; elif [ "$P1" != "$P2" ]; then warn "รหัสผ่านไม่ตรงกัน"; else break; fi
+    done
+    HASH="$(cd "$APP_DIR" && NEWPW="$P1" node -e "process.stdout.write(require('bcryptjs').hashSync(process.env.NEWPW,10))")"
+    unset P1 P2
+    echo "UPDATE users SET password_hash=:'h', failed_attempts=0, locked_until=NULL WHERE username='admin';" \
+      | as_pg psql -q -v ON_ERROR_STOP=1 -d "$DB_NAME" -v h="$HASH" >/dev/null
+    ok "ตั้งรหัสผ่าน admin ใหม่แล้ว"
+  fi
 fi
 
 # ---------- 6. nginx reverse proxy ----------

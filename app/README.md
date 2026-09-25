@@ -81,7 +81,7 @@ bash app/deploy/install.sh --check   # ตรวจอย่างเดีย�
 bash app/deploy/install.sh           # ติดตั้ง/อัปเดตแบบถามทีละขั้น (รันซ้ำได้)
 ```
 
-สคริปต์ตรวจและช่วยติดตั้ง Node.js ≥ 20.6, PostgreSQL (สร้างฐานข้อมูล UTF8), คัดลอกแอปไป `/opt/bpcd-eportfolio`, สร้าง `.env` ด้วยค่าสุ่ม, systemd service `bpcd-eportfolio` และ nginx reverse proxy — ไม่เขียนทับ `.env` และ `uploads/` เดิม
+สคริปต์ตรวจและช่วยติดตั้ง Node.js ≥ 20.6, PostgreSQL (สร้างฐานข้อมูล UTF8), คัดลอกแอปไป `/opt/bpcd-eportfolio`, สร้าง `.env` ด้วยค่าสุ่ม, systemd service `bpcd-eportfolio`, ตั้ง/รีเซ็ตรหัสผ่าน admin และ nginx reverse proxy — ไม่เขียนทับ `.env` และ `uploads/` เดิม
 
 ## ติดตั้งบน Production (Debian 13 / TurnKey Linux Node.js)
 
@@ -92,7 +92,7 @@ bash app/deploy/install.sh --check   # ตรวจอย่างเดีย�
 bash app/deploy/install.sh           # ติดตั้ง/อัปเดตแบบถามทีละขั้น (รันซ้ำได้)
 ```
 
-สคริปต์ตรวจและช่วยติดตั้ง Node.js ≥ 20.6, PostgreSQL (สร้างฐานข้อมูล UTF8), คัดลอกแอปไป `/opt/bpcd-eportfolio`, สร้าง `.env` ด้วยค่าสุ่ม, systemd service `bpcd-eportfolio` และ nginx reverse proxy — ไม่เขียนทับ `.env` และ `uploads/` เดิม
+สคริปต์ตรวจและช่วยติดตั้ง Node.js ≥ 20.6, PostgreSQL (สร้างฐานข้อมูล UTF8), คัดลอกแอปไป `/opt/bpcd-eportfolio`, สร้าง `.env` ด้วยค่าสุ่ม, systemd service `bpcd-eportfolio`, ตั้ง/รีเซ็ตรหัสผ่าน admin และ nginx reverse proxy — ไม่เขียนทับ `.env` และ `uploads/` เดิม
 
 ## ความสามารถ
 
