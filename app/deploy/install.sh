@@ -225,6 +225,10 @@ fi
 ENV_FILE="$APP_DIR/.env"
 if [ -f "$ENV_FILE" ]; then
   ok "มี $ENV_FILE แล้ว (ไม่เขียนทับ)"
+  if [ "$CHECK_ONLY" = 0 ] && id "$APP_USER" >/dev/null 2>&1; then
+    chown root:"$APP_USER" "$ENV_FILE"; chmod 640 "$ENV_FILE"
+    ok "ตั้งสิทธิ์ .env ให้ '$APP_USER' อ่านได้ (root:$APP_USER 640)"
+  fi
   grep -q 'change-me' "$ENV_FILE" && problem "SESSION_SECRET ใน .env ยังเป็นค่าตัวอย่าง — ให้สุ่มใหม่: openssl rand -hex 48"
   [ -n "$DB_PASS" ] && warn "สร้างรหัสผ่านฐานข้อมูลใหม่: $DB_PASS — แก้ DATABASE_URL ใน .env ให้ตรง"
 elif [ -d "$APP_DIR" ]; then
