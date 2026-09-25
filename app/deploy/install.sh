@@ -172,8 +172,31 @@ if [ "$pg_ok" = 1 ] && [ "$(id -u)" -eq 0 ]; then
     fi
   elif [ "$db_enc" = UTF8 ]; then ok "ฐานข้อมูล '$DB_NAME' ใช้ UTF8"
   else
-    problem "ฐานข้อมูล '$DB_NAME' ใช้ $db_enc — เก็บภาษาไทยไม่ได้"
+    problem "ฐานข้อมูล '$DB_NAME' ใช้ $db_enc — เก็บภาษาไทยไม่ได้ (แอปจะไม่ยอมเริ่มทำงาน)"
     info "ต้องสำรองข้อมูล แล้ว DROP และสร้างใหม่ด้วย ENCODING 'UTF8' TEMPLATE template0"
+    ntab="$(as_pg psql -d "$DB_NAME" -tAc "SELECT count(*) FROM pg_tables WHERE schemaname='public'" || echo 0)"
+    info "ตารางในฐานข้อมูลเดิม: $ntab ตาราง"
+    if ask "สำรองข้อมูลแล้วสร้างฐานข้อมูล '$DB_NAME' ใหม่เป็น UTF8 ตอนนี้?"; then
+      BK="/root/${DB_NAME}-${db_enc}-$(date +%Y%m%d-%H%M%S).sql"
+      as_pg pg_dump --no-owner "$DB_NAME" > "$BK"
+      ok "สำรองไว้ที่ $BK"
+      systemctl stop "$APP_NAME" 2>/dev/null || true
+      as_pg psql -v ON_ERROR_STOP=1 -qc "DROP DATABASE \"$DB_NAME\" WITH (FORCE)"
+      as_pg psql -v ON_ERROR_STOP=1 -qc "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_USER\" ENCODING 'UTF8' TEMPLATE template0 LC_COLLATE 'C' LC_CTYPE 'C'"
+      ok "สร้างฐานข้อมูล '$DB_NAME' ใหม่เป็น UTF8 แล้ว"
+      if [ "$ntab" != 0 ]; then
+        # ข้อความใน SQL_ASCII คือ byte ดิบที่แอปส่งไปเป็น UTF-8 จึงนำเข้าเป็น UTF8 ได้ตรงๆ
+        if (echo "SET client_encoding='UTF8'; SET ROLE \"$DB_USER\";"; sed '/^SET client_encoding/d' "$BK") \
+             | as_pg psql -q -v ON_ERROR_STOP=1 -d "$DB_NAME" >/dev/null; then
+          ok "นำข้อมูลเดิมกลับเข้าแล้ว"
+        else
+          warn "นำข้อมูลเดิมกลับไม่สำเร็จ — ฐานข้อมูลว่าง แอปจะสร้างตาราง/ข้อมูลตัวอย่างใหม่ (ข้อมูลเดิมยังอยู่ใน $BK)"
+          as_pg psql -qc "DROP DATABASE \"$DB_NAME\" WITH (FORCE)"
+          as_pg psql -v ON_ERROR_STOP=1 -qc "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_USER\" ENCODING 'UTF8' TEMPLATE template0 LC_COLLATE 'C' LC_CTYPE 'C'"
+        fi
+      fi
+      PROBLEMS=$((PROBLEMS - 1))
+    fi
   fi
 fi
 
