@@ -6,13 +6,18 @@ const session = require('express-session');
 const PgSession = require('connect-pg-simple')(session);
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
+const rateLimit = require('express-rate-limit');
 const { pool, migrate, audit } = require('./db');
 const seed = require('./db/seed');
 
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.SESSION_SECRET || 'dev-secret-please-change';
+const COOKIE_SECURE = String(process.env.COOKIE_SECURE || '').toLowerCase() === 'true';
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_MS = 15 * 60 * 1000;
 
 const WORK_TYPES = ['โครงการ', 'งานประจำ', 'วิชาการ', 'ยุทธศาสตร์', 'บริการ', 'เร่งด่วน'];
 const WORK_STATUSES = ['รอตรวจสอบ', 'กำลังดำเนินการ', 'รอหลักฐาน', 'รับรองแล้ว'];
@@ -85,9 +90,31 @@ app.use(
     secret: SECRET,
     resave: false,
     saveUninitialized: false,
-    cookie: { httpOnly: true, sameSite: 'lax', maxAge: 8 * 3600 * 1000 }
+    cookie: { httpOnly: true, sameSite: 'lax', secure: COOKIE_SECURE, maxAge: 8 * 3600 * 1000 }
   })
 );
+
+// ---------- CSRF (synchronizer token, tied to server-side session) ----------
+app.use((req, res, next) => {
+  if (!req.session.csrfToken) req.session.csrfToken = crypto.randomBytes(24).toString('hex');
+  next();
+});
+app.get('/api/csrf', (req, res) => res.json({ token: req.session.csrfToken }));
+app.use('/api', (req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  const token = req.get('X-CSRF-Token');
+  if (!token || token !== req.session.csrfToken) return res.status(403).json({ error: 'คำขอไม่ถูกต้อง (CSRF) กรุณาโหลดหน้าใหม่' });
+  next();
+});
+
+// ---------- Login rate limiting (per-IP, on top of per-account lockout below) ----------
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'พยายามเข้าสู่ระบบบ่อยเกินไป กรุณาลองใหม่ภายหลัง' }
+});
 
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 function auth(req, res, next) {
@@ -102,18 +129,34 @@ const uid = req => req.session.user.id;
 const isAdmin = req => req.session.user.role === 'admin';
 
 // ---------- Auth ----------
-app.post('/api/login', wrap(async (req, res) => {
+app.post('/api/login', loginLimiter, wrap(async (req, res) => {
   const { username, password } = req.body || {};
   const { rows } = await pool.query('SELECT * FROM users WHERE username=$1', [String(username || '').trim()]);
   const u = rows[0];
-  if (!u || !(await bcrypt.compare(String(password || ''), u.password_hash))) {
+
+  if (u && u.locked_until && new Date(u.locked_until) > new Date()) {
+    const mins = Math.ceil((new Date(u.locked_until) - new Date()) / 60000);
+    return res.status(423).json({ error: `บัญชีถูกล็อกชั่วคราวจากการเข้าสู่ระบบผิดหลายครั้ง กรุณาลองใหม่ในอีก ${mins} นาที` });
+  }
+
+  const ok = u && (await bcrypt.compare(String(password || ''), u.password_hash));
+  if (!u || !ok) {
+    if (u) {
+      const attempts = u.failed_attempts + 1;
+      const lock = attempts >= MAX_LOGIN_ATTEMPTS ? new Date(Date.now() + LOCKOUT_MS) : null;
+      await pool.query('UPDATE users SET failed_attempts=$1, locked_until=$2 WHERE id=$3', [attempts, lock, u.id]);
+      if (lock) audit(u.id, 'account_locked');
+    }
     return res.status(401).json({ error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
   }
+
+  await pool.query('UPDATE users SET failed_attempts=0, locked_until=NULL WHERE id=$1', [u.id]);
   req.session.regenerate(err => {
     if (err) return res.status(500).json({ error: 'session error' });
     req.session.user = { id: u.id, role: u.role, name: u.name };
+    req.session.csrfToken = crypto.randomBytes(24).toString('hex');
     audit(u.id, 'login');
-    res.json({ ok: true });
+    res.json({ ok: true, csrfToken: req.session.csrfToken });
   });
 }));
 
@@ -236,6 +279,37 @@ function kindOf(name) {
   if (/\.(mp4|mov)$/.test(ext)) return 'วิดีโอ';
   return 'PDF';
 }
+// Real file-content check (magic bytes) so a renamed .exe etc. can't slip past the extension filter.
+// .csv/.doc/.xls (legacy) have no reliable universal signature, so they're allowed through on extension alone.
+function contentMatchesExt(ext, buf) {
+  const starts = sig => sig.every((b, i) => buf[i] === b);
+  switch (ext) {
+    case '.pdf': return starts([0x25, 0x50, 0x44, 0x46]); // %PDF
+    case '.docx':
+    case '.xlsx': return starts([0x50, 0x4b, 0x03, 0x04]); // ZIP (OOXML container)
+    case '.jpg':
+    case '.jpeg': return starts([0xff, 0xd8, 0xff]);
+    case '.png': return starts([0x89, 0x50, 0x4e, 0x47]);
+    case '.gif': return starts([0x47, 0x49, 0x46, 0x38]); // GIF8
+    case '.webp': return starts([0x52, 0x49, 0x46, 0x46]) && buf.slice(8, 12).toString('ascii') === 'WEBP'; // RIFF....WEBP
+    case '.mp4':
+    case '.mov': return buf.slice(4, 8).toString('ascii') === 'ftyp';
+    default: return true; // .doc, .xls, .csv — no reliable signature to check
+  }
+}
+async function verifyUploadedFiles(files) {
+  for (const f of files) {
+    const ext = path.extname(f.filename).toLowerCase();
+    const fd = fs.openSync(f.path, 'r');
+    const buf = Buffer.alloc(16);
+    fs.readSync(fd, buf, 0, 16, 0);
+    fs.closeSync(fd);
+    if (!contentMatchesExt(ext, buf)) {
+      for (const rm of files) fs.unlink(rm.path, () => {});
+      throw new Error('ไฟล์ "' + f.originalname + '" มีเนื้อหาไม่ตรงกับนามสกุลไฟล์');
+    }
+  }
+}
 // Browsers send UTF-8 filenames that busboy decodes as latin1; undo that unless it's already correct.
 function utf8Name(n) {
   const fixed = Buffer.from(n, 'latin1').toString('utf8');
@@ -250,6 +324,7 @@ async function ownWork(req, workId) {
 }
 
 app.post('/api/evidence', auth, upload.array('files', 20), wrap(async (req, res) => {
+  if (req.files && req.files.length) await verifyUploadedFiles(req.files);
   const workId = await ownWork(req, req.body.work_id);
   const out = [];
   for (const f of req.files || []) {
@@ -416,7 +491,7 @@ app.post('/api/users', admin, wrap(async (req, res) => {
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.use((err, req, res, next) => {
-  if (err instanceof multer.MulterError || /ไม่รองรับไฟล์/.test(err.message)) {
+  if (err instanceof multer.MulterError || /ไม่รองรับไฟล์|เนื้อหาไม่ตรงกับนามสกุล/.test(err.message)) {
     return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'ไฟล์ใหญ่เกิน 50 MB' : err.message });
   }
   console.error(err);

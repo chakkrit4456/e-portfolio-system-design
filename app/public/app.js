@@ -60,16 +60,30 @@ const stOf = s => ST[s] || ST['รอตรวจสอบ'];
 const withSt = w => { const c = stOf(w.status); return { ...w, stBg: c[0], stFg: c[1], stIcon: c[2], icon: TYPE_ICON[w.type] || 'bi bi-file-text' }; };
 const isAdmin = () => S.me && S.me.role === 'admin';
 
+let CSRF_TOKEN = '';
+async function ensureCsrfToken() {
+  if (CSRF_TOKEN) return CSRF_TOKEN;
+  const r = await fetch('/api/csrf', { credentials: 'same-origin' });
+  const j = await r.json().catch(() => ({}));
+  CSRF_TOKEN = j.token || '';
+  return CSRF_TOKEN;
+}
+
 async function api(url, opts = {}) {
   const o = { credentials: 'same-origin', ...opts };
+  const method = (o.method || 'GET').toUpperCase();
   if (o.body && !(o.body instanceof FormData)) {
     o.headers = { 'Content-Type': 'application/json', ...(o.headers || {}) };
     o.body = JSON.stringify(o.body);
   }
+  if (method !== 'GET' && method !== 'HEAD') {
+    o.headers = { 'X-CSRF-Token': await ensureCsrfToken(), ...(o.headers || {}) };
+  }
   const r = await fetch(url, o);
   const j = await r.json().catch(() => ({}));
-  if (r.status === 401 && url !== '/api/login') { S.me = null; S.data = null; render(); }
+  if (r.status === 401 && url !== '/api/login') { S.me = null; S.data = null; CSRF_TOKEN = ''; render(); }
   if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+  if (url === '/api/login' && j.csrfToken) CSRF_TOKEN = j.csrfToken;
   return j;
 }
 

@@ -72,8 +72,15 @@ public/            หน้าเว็บ (HTML/CSS/JS ล้วน ไม่�
 uploads/           ไฟล์หลักฐานที่อัปโหลด (ให้ backup คู่กับฐานข้อมูล)
 ```
 
+## ความปลอดภัย
+
+- **Login** — จำกัด 20 ครั้ง/15 นาที ต่อ IP (`express-rate-limit`) และล็อกบัญชีชั่วคราว 15 นาที หลังใส่รหัสผ่านผิดติดต่อกัน 5 ครั้ง (นับแยกต่อบัญชี เก็บใน `users.failed_attempts` / `locked_until`)
+- **CSRF** — ทุก request ที่แก้ไขข้อมูล (POST/PUT/DELETE ใต้ `/api`) ต้องแนบ header `X-CSRF-Token` ให้ตรงกับ token ที่ผูกกับ session (ขอผ่าน `GET /api/csrf`); ฝั่งเว็บจัดการให้อัตโนมัติอยู่แล้ว
+- **อัปโหลดไฟล์** — นอกจากเช็คนามสกุลไฟล์แล้ว ระบบยังตรวจ "magic bytes" ของเนื้อไฟล์จริง (pdf/docx/xlsx/jpg/png/gif/webp/mp4/mov) เพื่อกันไฟล์ปลอมนามสกุล ไฟล์ที่ไม่ตรงจะถูกลบทิ้งทันทีและปฏิเสธคำขอ
+- `COOKIE_SECURE=true` ใน `.env` เมื่อวางหลัง HTTPS reverse proxy จริง (production) — cookie จะส่งผ่าน HTTPS เท่านั้น (ตั้งเป็น `false` ตอน dev บน `http://localhost`)
+
 ## ข้อควรทราบ
 
-- `SESSION_SECRET` ใช้ทั้งเซ็น session และเข้ารหัส API Key — ถ้าเปลี่ยนค่า ต้องกรอก API Key ใหม่
+- `SESSION_SECRET` ใช้ทั้งเซ็น session, เข้ารหัส API Key และ sign CSRF token — ถ้าเปลี่ยนค่า ต้องกรอก API Key ใหม่ และผู้ใช้ทุกคนจะหลุดจาก session เดิม
 - KPI และสมรรถนะของผู้ใช้ใหม่ตั้งต้นจากชุดตัวอย่าง ยังไม่มีหน้าจอแก้ไข (แก้ในตาราง `kpis`, `competencies`)
-- ถ้าใช้งานจริงผ่านอินเทอร์เน็ต ควรวางหลัง HTTPS reverse proxy และตั้ง cookie `secure`
+- ถ้าใช้งานจริงผ่านอินเทอร์เน็ต ควรวางหลัง HTTPS reverse proxy และตั้ง `COOKIE_SECURE=true`
