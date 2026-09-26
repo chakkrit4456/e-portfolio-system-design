@@ -53,6 +53,30 @@ function localStore(k, v) {
   } catch (e) { return null; }
 }
 
+// บทสนทนากับผู้ช่วย AI เก็บใน sessionStorage (แยกตามผู้ใช้) ให้คงอยู่เมื่อเปลี่ยนหน้า/รีเฟรช
+// ลบเมื่อออกจากระบบหรือปิดแท็บ; ข้อความที่มีรหัสผ่าน (secret) ไม่ถูกเก็บ
+const CHAT_KEYS = ['askMsgs', 'ivMsgs', 'ivStep', 'ivAnswers', 'ivDone', 'draftSummary', 'mode', 'chatOpen'];
+const chatKey = () => S.me && 'bpcd_chat_' + S.me.id;
+function saveChat() {
+  if (!chatKey() || !S._chatRestored) return;
+  const o = {};
+  for (const k of CHAT_KEYS) o[k] = S[k];
+  o.askMsgs = S.askMsgs.filter(m => !m.secret);
+  try { sessionStorage.setItem(chatKey(), JSON.stringify(o)); } catch (e) { /* storage ปิดอยู่ */ }
+}
+function restoreChat() {
+  if (S._chatRestored || !chatKey()) return;
+  S._chatRestored = true;
+  try {
+    const o = JSON.parse(sessionStorage.getItem(chatKey()) || 'null');
+    if (o) for (const k of CHAT_KEYS) if (o[k] !== undefined) S[k] = o[k];
+    S._scrollChat = true;
+  } catch (e) { /* ข้อมูลเสีย — เริ่มใหม่ */ }
+}
+function clearChat() {
+  try { Object.keys(sessionStorage).filter(k => k.startsWith('bpcd_chat_')).forEach(k => sessionStorage.removeItem(k)); } catch (e) { /* ignore */ }
+}
+
 // ---------------- helpers ----------------
 const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pad2 = n => String(n).padStart(2, '0');
@@ -105,6 +129,7 @@ async function loadData() {
   const d = await api('/api/portfolio');
   S.data = d;
   S.me = d.user;
+  restoreChat();
 }
 
 // ---------------- derived values ----------------
@@ -844,6 +869,7 @@ function viewModal() {
 // ---------------- render ----------------
 const root = document.getElementById('root');
 function render() {
+  saveChat();
   const a = document.activeElement;
   const focusId = a && a.id ? a.id : null;
   const sel = focusId && 'selectionStart' in a ? [a.selectionStart, a.selectionEnd] : null;
@@ -900,7 +926,7 @@ async function aiCreateUsers(i) {
   S.busy = false;
   m.action = { ...m.action, done: 'ดำเนินการแล้ว — สำเร็จ ' + ok.length + ' / ' + m.action.users.length };
   S.users = null;
-  pushMsg('askMsgs', { role: 'bot', text:
+  pushMsg('askMsgs', { role: 'bot', secret: ok.length > 0, text:
     (ok.length ? 'เพิ่มผู้ใช้แล้ว (รหัสผ่านแสดงครั้งเดียว ให้แจ้งผู้ใช้และเปลี่ยนรหัสหลังเข้าระบบครั้งแรก):\n' + ok.join('\n') : '') +
     (fail.length ? (ok.length ? '\n\n' : '') + 'เพิ่มไม่สำเร็จ:\n' + fail.join('\n') : '') });
   render();
@@ -1009,7 +1035,7 @@ const A = {
   goPortfolio: () => { set({ view: 'portfolio', sideOpen: false }); window.scrollTo(0, 0); },
   goAdmin: () => { set({ view: 'admin' }); window.scrollTo(0, 0); },
   print: () => window.print(),
-  logout: async () => { try { await api('/api/logout', { method: 'POST' }); } catch (e) { /* ignore */ } location.reload(); },
+  logout: async () => { clearChat(); try { await api('/api/logout', { method: 'POST' }); } catch (e) { /* ignore */ } location.reload(); },
   typeFilter: el => set({ typeFilter: el.dataset.v }),
   startInterview: () => { localStore('hintSeen', '1'); set({ chatOpen: true, mode: 'interview', hintSeen: true, _scrollChat: true }); focusChat(); },
   toggleChat: () => { localStore('hintSeen', '1'); set({ chatOpen: !S.chatOpen, hintSeen: true, _scrollChat: true }); if (S.chatOpen) focusChat(); },
