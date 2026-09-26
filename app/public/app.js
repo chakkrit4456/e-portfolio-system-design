@@ -93,6 +93,17 @@ async function ensureCsrfToken() {
   return CSRF_TOKEN;
 }
 
+// เซิร์ฟเวอร์ deploy เวอร์ชันใหม่ระหว่างที่หน้าเปิดอยู่ -> แจ้งให้รีเฟรช (บทสนทนา AI ไม่หายเพราะเก็บใน sessionStorage)
+let APP_VERSION = '';
+function showUpdateBanner() {
+  if (document.getElementById('updBanner')) return;
+  const b = document.createElement('button');
+  b.id = 'updBanner';
+  b.textContent = '↻ มีระบบเวอร์ชันใหม่ — กดที่นี่เพื่อรีเฟรช';
+  b.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9999;padding:10px 18px;border-radius:24px;background:#7B1E2B;color:#fff;font-size:14px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.25)';
+  b.onclick = () => location.reload();
+  document.body.appendChild(b);
+}
 async function api(url, opts = {}, retried = false) {
   const o = { credentials: 'same-origin', ...opts };
   const method = (o.method || 'GET').toUpperCase();
@@ -107,6 +118,8 @@ async function api(url, opts = {}, retried = false) {
   const j = await r.json().catch(() => ({}));
   // token เก่า (session หมดอายุ/เซิร์ฟเวอร์รีสตาร์ท) — ขอ token ใหม่แล้วลองอีกครั้ง
   if (r.status === 403 && j.csrf && !retried) { CSRF_TOKEN = ''; return api(url, opts, true); }
+  const ver = r.headers.get('X-App-Version');
+  if (ver) { if (!APP_VERSION) APP_VERSION = ver; else if (ver !== APP_VERSION) showUpdateBanner(); }
   if (r.status === 401 && url !== '/api/login') { S.me = null; S.data = null; CSRF_TOKEN = ''; render(); }
   // 502/503/504 ที่ไม่มี JSON = หน้า error ของ nginx/proxy (แอปไม่ตอบ หรือกำลังรีสตาร์ท)
   if (!r.ok) throw new Error(j.error || ([502, 503, 504].includes(r.status)

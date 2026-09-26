@@ -82,6 +82,11 @@ async function callLLM(messages) {
 // ---------- App ----------
 const app = express();
 app.set('trust proxy', 1);
+// เวอร์ชันของไฟล์หน้าเว็บ — client เทียบกับ header นี้เพื่อรู้ว่ามี deploy ใหม่และต้องรีเฟรช
+const APP_VERSION = crypto.createHash('sha1')
+  .update(['app.js', 'styles.css', 'index.html'].map(f => fs.readFileSync(path.join(__dirname, 'public', f))).join(''))
+  .digest('hex').slice(0, 12);
+app.use('/api', (req, res, next) => { res.set('X-App-Version', APP_VERSION); next(); });
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json({ limit: '1mb' }));
 app.use(
@@ -531,10 +536,15 @@ app.post('/api/ai/chat', auth, wrap(async (req, res) => {
     if (isAdmin(req) && !action && ADD_USER_RE.test(last)) {
       const json = await callLLM([{ role: 'system', content: AI_USERS_JSON_ONLY }, ...hist.slice(-4)]).catch(() => '');
       const r = extractUserAction(json || '');
-      if (r.action) { action = r.action; text = 'ตรวจสอบรายชื่อด้านล่าง แล้วกด “ยืนยันเพิ่มผู้ใช้” (ยังไม่ได้บันทึกจนกว่าจะกดยืนยัน)'; }
+      if (r.action) action = r.action;
       else text = 'ยังไม่ได้เพิ่มผู้ใช้ครับ — ระบุชื่อ-นามสกุลของผู้ใช้ที่ต้องการเพิ่ม (และชื่อผู้ใช้ภาษาอังกฤษ ถ้ามี) แล้วลองใหม่อีกครั้ง';
     }
-    res.json({ text: text || (action ? 'ตรวจสอบรายชื่อด้านล่าง แล้วกด “ยืนยันเพิ่มผู้ใช้”' : '(ไม่มีคำตอบ)'), action });
+    if (action) {
+      text = 'รายชื่อที่จะเพิ่ม (ยังไม่ได้บันทึก):\n' +
+        action.users.map((u, n) => (n + 1) + '. ' + u.name + ' — ชื่อผู้ใช้: ' + u.username + (u.role === 'admin' ? ' (ผู้ดูแลระบบ)' : '')).join('\n') +
+        '\n\nกด “ยืนยันเพิ่มผู้ใช้” ด้านล่างเพื่อบันทึก (ถ้าไม่เห็นปุ่ม ให้กด Ctrl+F5 แล้วสั่งใหม่)';
+    }
+    res.json({ text: text || '(ไม่มีคำตอบ)', action });
   } catch (e) {
     res.status(422).json({ error: e.message || 'AI ตอบกลับผิดพลาด' });
   }
