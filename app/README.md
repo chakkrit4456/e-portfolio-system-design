@@ -94,6 +94,16 @@ bash app/deploy/install.sh           # ติดตั้ง/อัปเดต�
 
 สคริปต์ตรวจและช่วยติดตั้ง Node.js ≥ 20.6, PostgreSQL (สร้างฐานข้อมูล UTF8), คัดลอกแอปไป `/opt/bpcd-eportfolio`, สร้าง `.env` ด้วยค่าสุ่ม, systemd service `bpcd-eportfolio`, ตั้ง/รีเซ็ตรหัสผ่าน admin และ nginx reverse proxy — ไม่เขียนทับ `.env` และ `uploads/` เดิม
 
+### Auto deploy
+
+ตอบ "y" ที่ขั้นที่ 7 ของ `install.sh` เพื่อเปิด auto deploy: เซิร์ฟเวอร์จะตรวจ branch `main` บน GitHub ทุก 2 นาที ถ้ามี commit ใหม่จะคัดลอกโค้ด ติดตั้ง dependencies (ถ้าเปลี่ยน) และรีสตาร์ทแอปเอง ถ้าแอปไม่ขึ้นจะ rollback กลับเวอร์ชันเดิมอัตโนมัติ (เซิร์ฟเวอร์ไม่ต้องเปิดพอร์ตรับจาก GitHub)
+
+```bash
+systemctl start bpcd-eportfolio-update         # deploy ทันทีไม่ต้องรอ
+journalctl -u bpcd-eportfolio-update -n 30     # ดูประวัติการ deploy
+systemctl disable --now bpcd-eportfolio-update.timer   # ปิด auto deploy
+```
+
 ## ความสามารถ
 
 - **แดชบอร์ด** — สถิติผลงาน/หลักฐาน/KPI/สมรรถนะ, เส้นทางข้อมูล 9 ขั้น, ข้อสังเกต, ความครบถ้วนของแฟ้ม (คำนวณจากข้อมูลจริง)
