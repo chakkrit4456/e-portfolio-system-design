@@ -489,7 +489,13 @@ async function portfolioContext(id) {
 const AI_ADMIN_USERS = ' ผู้ใช้ปัจจุบันเป็นผู้ดูแลระบบ: ถ้าขอให้เพิ่ม/สร้างผู้ใช้ ให้ตอบสั้นๆ แล้วต่อท้ายด้วยบล็อก\n' +
   '```action\n{"type":"create_users","users":[{"username":"somchai.j","name":"นายสมชาย ใจดี","position":"ครู","level":"ชำนาญการ","group_name":"","role":"staff"}]}\n```\n' +
   'username เป็นอักษรอังกฤษตัวเล็ก/ตัวเลข/. _ - 3–32 ตัว (ถ้าไม่ได้ระบุ ให้ถอดจากชื่อจริงเป็นภาษาอังกฤษ), role เป็น staff เว้นแต่สั่งให้เป็น admin, ' +
-  'ห้ามใส่รหัสผ่าน (ระบบสุ่มให้) ห้ามแต่งข้อมูลที่ไม่ได้บอก ถ้าข้อมูลไม่พอ (เช่นไม่มีชื่อ) ให้ถามก่อนโดยไม่ใส่บล็อก';
+  'ห้ามใส่รหัสผ่าน (ระบบสุ่มให้) ห้ามแต่งข้อมูลที่ไม่ได้บอก ถ้าข้อมูลไม่พอ (เช่นไม่มีชื่อ) ให้ถามก่อนโดยไม่ใส่บล็อก. ' +
+  'สำคัญ: คุณเพิ่มผู้ใช้เองไม่ได้ ห้ามตอบว่า "เพิ่มแล้ว/เรียบร้อยแล้ว" — ระบบจะแสดงปุ่มให้ผู้ดูแลกดยืนยันจากบล็อกนี้เท่านั้น';
+const ADD_USER_RE = /(เพิ่ม|สร้าง|ลงทะเบียน|เปิดบัญชี).{0,20}(ผู้ใช้|บัญชี|user|สมาชิก|บุคลากร)|add\s*user|create\s*user/i;
+const AI_USERS_JSON_ONLY = 'แปลงคำขอเพิ่มผู้ใช้ล่าสุดในบทสนทนาเป็น JSON อย่างเดียว ไม่มีข้อความอื่น รูปแบบ: ' +
+  '{"type":"create_users","users":[{"username":"","name":"","position":"","level":"","group_name":"","role":"staff"}]} ' +
+  'name = ชื่อ-นามสกุลตามที่ระบุ (ใส่คำนำหน้าถ้ามี), username = ถอดชื่อจริงเป็นอักษรอังกฤษตัวเล็ก เช่น chakkrit.s (3–32 ตัว a-z 0-9 . _ -), ' +
+  'ช่องที่ไม่ได้ระบุให้เป็น "" ห้ามแต่ง. ถ้าไม่มีชื่อบุคคลเลย ตอบ {"type":"none"}';
 
 function extractUserAction(out) {
   // โมเดลบางตัวใช้ ```json หรือไม่มี fence — รับทุกแบบที่มี "create_users"
@@ -519,7 +525,15 @@ app.post('/api/ai/chat', auth, wrap(async (req, res) => {
       'ตอบภาษาไทยสุภาพ กระชับ ถูกต้องตามแบบราชการ ไม่ตัดสินผลประเมินแทนผู้ประเมิน. ' + (await portfolioContext(uid(req))) +
       (isAdmin(req) ? AI_ADMIN_USERS : '');
     const out = (await callLLM([{ role: 'system', content: system }, ...hist])) || '';
-    const { text, action } = isAdmin(req) ? extractUserAction(out) : { text: out, action: null };
+    let { text, action } = isAdmin(req) ? extractUserAction(out) : { text: out, action: null };
+    // โมเดลบางตัวตอบว่า "เพิ่มแล้ว" โดยไม่ส่งบล็อก — ถ้าคำสั่งล่าสุดเป็นการเพิ่มผู้ใช้ ให้ขอ JSON อย่างเดียวอีกรอบ
+    const last = hist.length && hist[hist.length - 1].role === 'user' ? hist[hist.length - 1].content : '';
+    if (isAdmin(req) && !action && ADD_USER_RE.test(last)) {
+      const json = await callLLM([{ role: 'system', content: AI_USERS_JSON_ONLY }, ...hist.slice(-4)]).catch(() => '');
+      const r = extractUserAction(json || '');
+      if (r.action) { action = r.action; text = 'ตรวจสอบรายชื่อด้านล่าง แล้วกด “ยืนยันเพิ่มผู้ใช้” (ยังไม่ได้บันทึกจนกว่าจะกดยืนยัน)'; }
+      else text = 'ยังไม่ได้เพิ่มผู้ใช้ครับ — ระบุชื่อ-นามสกุลของผู้ใช้ที่ต้องการเพิ่ม (และชื่อผู้ใช้ภาษาอังกฤษ ถ้ามี) แล้วลองใหม่อีกครั้ง';
+    }
     res.json({ text: text || (action ? 'ตรวจสอบรายชื่อด้านล่าง แล้วกด “ยืนยันเพิ่มผู้ใช้”' : '(ไม่มีคำตอบ)'), action });
   } catch (e) {
     res.status(422).json({ error: e.message || 'AI ตอบกลับผิดพลาด' });
