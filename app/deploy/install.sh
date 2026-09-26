@@ -15,6 +15,7 @@
 #   4. คัดลอกโค้ดไป APP_DIR, ติดตั้ง dependencies, สร้าง .env (ไม่ทับของเดิม)
 #   5. สร้าง systemd service และเริ่มระบบ, ตั้ง/รีเซ็ตรหัสผ่าน admin
 #   6. ตั้ง nginx reverse proxy (+ แนะนำ HTTPS)
+#   7. (เลือกได้) auto deploy: systemd timer ดึง git และอัปเดตเองทุก 2 นาที
 # =============================================================================
 set -euo pipefail
 
@@ -35,7 +36,7 @@ for a in "$@"; do
   case "$a" in
     --check) CHECK_ONLY=1 ;;
     --yes|-y) ASSUME_YES=1 ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
     *) echo "ไม่รู้จักตัวเลือก: $a" >&2; exit 2 ;;
   esac
 done
@@ -395,6 +396,47 @@ EOF
   fi
 fi
 
+# ---------- 7. auto deploy ----------
+step "7. auto deploy (อัปเดตอัตโนมัติเมื่อมี commit ใหม่บน git)"
+UPD_TIMER="/etc/systemd/system/$APP_NAME-update.timer"
+SRC_REPO="/opt/$APP_NAME-src"
+if [ -f "$UPD_TIMER" ]; then
+  ok "เปิด auto deploy แล้ว (ตรวจทุก 2 นาที) — log: journalctl -u $APP_NAME-update -n 30"
+elif ask "เปิด auto deploy? (ตรวจ git ทุก 2 นาที มี commit ใหม่จะอัปเดตเอง และ rollback ถ้าแอปไม่ขึ้น)" N; then
+  have git || apt_install git
+  REPO_URL="$(git -C "$SRC_DIR" remote get-url origin 2>/dev/null || true)"
+  REPO_URL="$(prompt "URL ของ git repo (repo private ใส่ https://<token>@github.com/...)" "${REPO_URL:-https://github.com/chakkrit4456/e-portfolio-system-design.git}")"
+  BRANCH="$(prompt "branch ที่จะ deploy" "main")"
+  if [ -d "$SRC_REPO/.git" ]; then git -C "$SRC_REPO" remote set-url origin "$REPO_URL"
+  else git clone --quiet --branch "$BRANCH" "$REPO_URL" "$SRC_REPO"; fi
+  chmod 700 "$SRC_REPO"
+  cat > "/etc/systemd/system/$APP_NAME-update.service" <<EOF
+[Unit]
+Description=BPCD e-Portfolio auto deploy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=APP_NAME=$APP_NAME APP_DIR=$APP_DIR APP_USER=$APP_USER APP_PORT=$APP_PORT SRC_REPO=$SRC_REPO BRANCH=$BRANCH
+ExecStart=/bin/bash $SRC_REPO/app/deploy/auto-update.sh
+EOF
+  cat > "$UPD_TIMER" <<EOF
+[Unit]
+Description=BPCD e-Portfolio auto deploy (every 2 min)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now "$APP_NAME-update.timer"
+  ok "เปิด auto deploy แล้ว — push ขึ้น $BRANCH แล้วรอไม่เกิน 2 นาที"
+fi
+
 # ---------- สรุป ----------
 step "สรุป"
 if [ "$PROBLEMS" -le 0 ]; then
@@ -409,7 +451,8 @@ cat <<EOF
      แล้วตั้ง COOKIE_SECURE=true ใน $ENV_FILE และ  systemctl restart $APP_NAME
    - Firewall: เปิดเฉพาะพอร์ต 22/80/443 (ไม่ต้องเปิด $APP_PORT และ 5432 สู่ภายนอก)
    - Backup: pg_dump $DB_NAME  และโฟลเดอร์ $APP_DIR/uploads  (ต้อง backup คู่กัน)
-   - อัปเดตโค้ด: git pull แล้วรัน  bash app/deploy/install.sh  ซ้ำ (ไม่ทับ .env / uploads)
+   - อัปเดตโค้ด: อัตโนมัติถ้าเปิด auto deploy (ขั้นที่ 7) หรือ git pull แล้วรัน  bash app/deploy/install.sh  ซ้ำ
+     deploy ทันที:  systemctl start $APP_NAME-update  |  log:  journalctl -u $APP_NAME-update -f
    - คำสั่งที่ใช้บ่อย:  systemctl status $APP_NAME  |  journalctl -u $APP_NAME -f
 EOF
 [ "$PROBLEMS" -le 0 ]
