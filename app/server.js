@@ -492,7 +492,9 @@ const AI_ADMIN_USERS = ' ผู้ใช้ปัจจุบันเป็น�
   'ห้ามใส่รหัสผ่าน (ระบบสุ่มให้) ห้ามแต่งข้อมูลที่ไม่ได้บอก ถ้าข้อมูลไม่พอ (เช่นไม่มีชื่อ) ให้ถามก่อนโดยไม่ใส่บล็อก';
 
 function extractUserAction(out) {
-  const m = out.match(/```action\s*([\s\S]*?)```/);
+  // โมเดลบางตัวใช้ ```json หรือไม่มี fence — รับทุกแบบที่มี "create_users"
+  const m = [...out.matchAll(/```[a-zA-Z]*\s*([\s\S]*?)```/g)].find(x => x[1].includes('create_users')) ||
+    out.match(/(\{[\s\S]*"create_users"[\s\S]*\})/);
   if (!m) return { text: out.trim(), action: null };
   const text = out.replace(m[0], '').trim();
   try {
