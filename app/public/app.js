@@ -709,7 +709,7 @@ function viewChat() {
     <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-top:8px">${QUESTIONS.map((_, i) => `<div style="height:4px;border-radius:4px;background:${i < S.ivStep ? '#7B1E2B' : i === S.ivStep ? '#B8913A' : '#E6DEDC'}"></div>`).join('')}</div>
   </div>` : ''}
   <div id="msgs" style="flex:1;overflow:auto;padding:16px 16px 8px;display:flex;flex-direction:column;gap:10px;background:#fff">
-    ${msgs.map(m => { const me = m.role === 'user'; return `<div style="display:flex;justify-content:${me ? 'flex-end' : 'flex-start'}"><div style="max-width:86%;padding:10px 13px;font-size:13.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;background:${me ? '#7B1E2B' : '#F4F1EF'};color:${me ? '#fff' : '#1F1A1B'};border-radius:${me ? '14px 4px 14px 14px' : '4px 14px 14px 14px'}">${esc(m.text)}</div></div>`; }).join('')}
+    ${msgs.map((m, i) => { const me = m.role === 'user'; return `<div style="display:flex;flex-direction:column;align-items:${me ? 'flex-end' : 'flex-start'}"><div style="max-width:86%;padding:10px 13px;font-size:13.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;background:${me ? '#7B1E2B' : '#F4F1EF'};color:${me ? '#fff' : '#1F1A1B'};border-radius:${me ? '14px 4px 14px 14px' : '4px 14px 14px 14px'}">${esc(m.text)}</div>${!iv && m.action ? userActionCard(m.action, i) : ''}</div>`; }).join('')}
     ${S.loading ? `<div style="display:flex;gap:4px;padding:10px 13px;background:#F4F1EF;border-radius:4px 14px 14px 14px;width:fit-content">${dots}</div>` : ''}
     ${iv && S.ivDone ? `
     <div style="border:1px solid #E3D3B0;background:#FDFAF3;border-radius:12px;padding:14px;margin-top:4px">
@@ -851,6 +851,34 @@ function readHash() {
 }
 const set = patch => { Object.assign(S, patch); render(); };
 
+// ---------------- chat: เพิ่มผู้ใช้ผ่านผู้ช่วย AI (admin) ----------------
+function userActionCard(a, i) {
+  const rows = a.users.map(u => `<div style="padding:6px 0;border-top:1px solid #EFE6E7"><b>${esc(u.name)}</b> <span style="color:#8A7F81">(${esc(u.username)})</span>${u.role === 'admin' ? ' <span style="color:#7B1E2B">ผู้ดูแลระบบ</span>' : ''}<br><span style="font-size:12px;color:#6B6163">${esc([u.position, u.level, u.group_name].filter(Boolean).join(' · ') || '-')}</span></div>`).join('');
+  const btn = a.done ? `<div style="font-size:12px;color:#2E7D4F;margin-top:6px">${esc(a.done)}</div>`
+    : `<button data-act="aiCreateUsers" data-v="${i}" style="margin-top:8px;padding:7px 12px;border-radius:8px;background:#7B1E2B;color:#fff;font-size:13px">ยืนยันเพิ่มผู้ใช้ ${a.users.length} คน</button>`;
+  return `<div style="max-width:86%;margin-top:6px;padding:10px 13px;font-size:13px;background:#fff;border:1px solid #E4CBCE;border-radius:10px">
+    <div style="font-weight:600;margin-bottom:4px"><i class="bi bi-person-plus"></i> เพิ่มผู้ใช้ (ยังไม่ได้บันทึก)</div>${rows}${btn}</div>`;
+}
+async function aiCreateUsers(i) {
+  const m = S.askMsgs[i];
+  if (!m || !m.action || m.action.done || S.busy) return;
+  S.busy = true;
+  const ok = [], fail = [];
+  for (const u of m.action.users) {
+    try {
+      const r = await api('/api/users', { method: 'POST', body: { ...u, generatePassword: true } });
+      ok.push(u.name + '  ชื่อผู้ใช้: ' + u.username + '  รหัสผ่าน: ' + r.password);
+    } catch (e) { fail.push(u.name + ' (' + u.username + '): ' + e.message); }
+  }
+  S.busy = false;
+  m.action = { ...m.action, done: 'ดำเนินการแล้ว — สำเร็จ ' + ok.length + ' / ' + m.action.users.length };
+  S.users = null;
+  pushMsg('askMsgs', { role: 'bot', text:
+    (ok.length ? 'เพิ่มผู้ใช้แล้ว (รหัสผ่านแสดงครั้งเดียว ให้แจ้งผู้ใช้และเปลี่ยนรหัสหลังเข้าระบบครั้งแรก):\n' + ok.join('\n') : '') +
+    (fail.length ? (ok.length ? '\n\n' : '') + 'เพิ่มไม่สำเร็จ:\n' + fail.join('\n') : '') });
+  render();
+}
+
 // ---------------- chat logic ----------------
 function pushMsg(key, msg) { S[key] = [...S[key], msg]; S._scrollChat = true; }
 
@@ -881,7 +909,7 @@ async function send() {
   set({ loading: true });
   try {
     const r = await api('/api/ai/chat', { method: 'POST', body: { messages: S.askMsgs } });
-    pushMsg('askMsgs', { role: 'bot', text: r.text });
+    pushMsg('askMsgs', { role: 'bot', text: r.text, action: r.action || undefined });
   } catch (e) {
     pushMsg('askMsgs', { role: 'bot', text: 'เชื่อมต่อไม่สำเร็จ: ' + e.message });
   }
@@ -959,6 +987,7 @@ const A = {
   startInterview: () => { localStore('hintSeen', '1'); set({ chatOpen: true, mode: 'interview', hintSeen: true, _scrollChat: true }); focusChat(); },
   toggleChat: () => { localStore('hintSeen', '1'); set({ chatOpen: !S.chatOpen, hintSeen: true, _scrollChat: true }); if (S.chatOpen) focusChat(); },
   chatMode: el => { set({ mode: el.dataset.v, _scrollChat: true }); focusChat(); },
+  aiCreateUsers: el => aiCreateUsers(+el.dataset.v),
   resetChat: () => set(S.mode === 'ask' ? { askMsgs: S.askMsgs.slice(0, 1) } : { ivStep: 0, ivAnswers: [], ivMsgs: [greet()], ivDone: false, draftSummary: '' }),
   chip: el => { S.chatInput = (S.chatInput ? S.chatInput + ' ' : '') + el.dataset.v; render(); focusChat(); },
   send, polish, saveDraft, mic: toggleMic,

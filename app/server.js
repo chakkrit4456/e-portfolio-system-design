@@ -430,14 +430,41 @@ async function portfolioContext(id) {
     k.rows.map(x => x.name + ' ' + x.actual + '/' + x.target).join('; ');
 }
 
+// ผู้ดูแลระบบสั่งเพิ่มผู้ใช้ผ่านแชทได้: AI เสนอรายชื่อเป็นบล็อก ```action``` แล้วผู้ดูแลกดยืนยันเอง
+// (การสร้างจริงผ่าน POST /api/users ซึ่งตรวจสิทธิ์ admin อีกครั้ง — AI ไม่ได้สร้างบัญชีเอง)
+const AI_ADMIN_USERS = ' ผู้ใช้ปัจจุบันเป็นผู้ดูแลระบบ: ถ้าขอให้เพิ่ม/สร้างผู้ใช้ ให้ตอบสั้นๆ แล้วต่อท้ายด้วยบล็อก\n' +
+  '```action\n{"type":"create_users","users":[{"username":"somchai.j","name":"นายสมชาย ใจดี","position":"ครู","level":"ชำนาญการ","group_name":"","role":"staff"}]}\n```\n' +
+  'username เป็นอักษรอังกฤษตัวเล็ก/ตัวเลข/. _ - 3–32 ตัว (ถ้าไม่ได้ระบุ ให้ถอดจากชื่อจริงเป็นภาษาอังกฤษ), role เป็น staff เว้นแต่สั่งให้เป็น admin, ' +
+  'ห้ามใส่รหัสผ่าน (ระบบสุ่มให้) ห้ามแต่งข้อมูลที่ไม่ได้บอก ถ้าข้อมูลไม่พอ (เช่นไม่มีชื่อ) ให้ถามก่อนโดยไม่ใส่บล็อก';
+
+function extractUserAction(out) {
+  const m = out.match(/```action\s*([\s\S]*?)```/);
+  if (!m) return { text: out.trim(), action: null };
+  const text = out.replace(m[0], '').trim();
+  try {
+    const a = JSON.parse(m[1]);
+    const s = v => String(v || '').trim().slice(0, 200);
+    const users = (Array.isArray(a.users) ? a.users : []).slice(0, 50).map(u => ({
+      username: s(u.username).toLowerCase(), name: s(u.name), position: s(u.position), level: s(u.level),
+      group_name: s(u.group_name), role: u.role === 'admin' ? 'admin' : 'staff'
+    })).filter(u => u.username && u.name);
+    return { text, action: a.type === 'create_users' && users.length ? { type: 'create_users', users } : null };
+  } catch (e) {
+    return { text, action: null };
+  }
+}
+
 app.post('/api/ai/chat', auth, wrap(async (req, res) => {
   const hist = (Array.isArray(req.body.messages) ? req.body.messages : [])
     .slice(-10)
     .map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: String(m.text || '').slice(0, 4000) }));
   try {
     const system = 'คุณคือผู้ช่วย AI ของระบบแฟ้มสะสมงานอิเล็กทรอนิกส์ สำนักพัฒนาสมรรถนะครูและบุคลากรอาชีวศึกษา สอศ. ' +
-      'ตอบภาษาไทยสุภาพ กระชับ ถูกต้องตามแบบราชการ ไม่ตัดสินผลประเมินแทนผู้ประเมิน. ' + (await portfolioContext(uid(req)));
-    res.json({ text: (await callLLM([{ role: 'system', content: system }, ...hist])) || '(ไม่มีคำตอบ)' });
+      'ตอบภาษาไทยสุภาพ กระชับ ถูกต้องตามแบบราชการ ไม่ตัดสินผลประเมินแทนผู้ประเมิน. ' + (await portfolioContext(uid(req))) +
+      (isAdmin(req) ? AI_ADMIN_USERS : '');
+    const out = (await callLLM([{ role: 'system', content: system }, ...hist])) || '';
+    const { text, action } = isAdmin(req) ? extractUserAction(out) : { text: out, action: null };
+    res.json({ text: text || (action ? 'ตรวจสอบรายชื่อด้านล่าง แล้วกด “ยืนยันเพิ่มผู้ใช้”' : '(ไม่มีคำตอบ)'), action });
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
@@ -470,6 +497,9 @@ app.post('/api/users', admin, wrap(async (req, res) => {
   const b = req.body || {};
   const username = String(b.username || '').trim();
   if (!/^[a-zA-Z0-9._-]{3,32}$/.test(username)) return res.status(400).json({ error: 'ชื่อผู้ใช้ 3–32 ตัว (a-z 0-9 . _ -)' });
+  // ไม่ส่งรหัสผ่านมา (เช่นเพิ่มผ่านผู้ช่วย AI) -> สุ่มให้และส่งกลับครั้งเดียว
+  const generated = b.generatePassword ? crypto.randomBytes(9).toString('base64').replace(/[+/=]/g, '').slice(0, 10) : null;
+  if (generated) b.password = generated;
   if (!b.name || !b.password || String(b.password).length < 8) return res.status(400).json({ error: 'กรุณาระบุชื่อ และรหัสผ่านอย่างน้อย 8 ตัวอักษร' });
   const client = await pool.connect();
   try {
@@ -483,7 +513,7 @@ app.post('/api/users', admin, wrap(async (req, res) => {
     await seed.seedUserData(client, rows[0].id, false);
     await client.query('COMMIT');
     audit(uid(req), 'user_create', username);
-    res.json({ id: rows[0].id });
+    res.json({ id: rows[0].id, password: generated || undefined });
   } catch (e) {
     await client.query('ROLLBACK');
     if (e.code === '23505') return res.status(400).json({ error: 'ชื่อผู้ใช้นี้มีอยู่แล้ว' });
