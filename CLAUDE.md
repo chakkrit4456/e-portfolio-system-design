@@ -36,4 +36,8 @@ The database must be UTF8-encoded; `migrate()` in `db/index.js` refuses to start
 - **`db/`** — `index.js` (pg pool, `migrate`, `audit`), `schema.sql` (users, works, evidence, kpis, competencies, settings, audit_log), `seed.js` (demo data from the prototype).
 - **`public/`** — vanilla JS SPA (`app.js`, no framework, no bundler) + `styles.css` recreating the v2 design. `GET /api/portfolio` returns the user's full portfolio in one payload that the client renders from.
 
+## Production deploy
+
+`app/deploy/install.sh` (run as root on Debian 13 / TurnKey Node.js) is an idempotent, step-by-step installer: base packages → Node ≥ 20.6 → PostgreSQL with a UTF8 DB (offers backup + recreate if not UTF8) → rsync code to `/opt/bpcd-eportfolio` + create `.env` (never overwrites) → systemd service `bpcd-eportfolio` → admin password set/reset → nginx reverse proxy. `--check` only diagnoses, `--yes` accepts defaults; `APP_DIR`, `APP_USER`, `APP_PORT`, `DB_NAME`, etc. are overridable via env vars. Every step asks before changing anything — keep it that way when editing, and keep messages in Thai.
+
 `SESSION_SECRET` signs sessions and CSRF tokens and encrypts the stored AI key — changing it logs everyone out and invalidates the saved API key. Set `COOKIE_SECURE=true` only behind HTTPS.
