@@ -84,7 +84,10 @@ async function api(url, opts = {}, retried = false) {
   // token เก่า (session หมดอายุ/เซิร์ฟเวอร์รีสตาร์ท) — ขอ token ใหม่แล้วลองอีกครั้ง
   if (r.status === 403 && j.csrf && !retried) { CSRF_TOKEN = ''; return api(url, opts, true); }
   if (r.status === 401 && url !== '/api/login') { S.me = null; S.data = null; CSRF_TOKEN = ''; render(); }
-  if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+  // 502/503/504 ที่ไม่มี JSON = หน้า error ของ nginx/proxy (แอปไม่ตอบ หรือกำลังรีสตาร์ท)
+  if (!r.ok) throw new Error(j.error || ([502, 503, 504].includes(r.status)
+    ? 'เซิร์ฟเวอร์ไม่ตอบสนอง (HTTP ' + r.status + ') — ลองใหม่อีกครั้ง ถ้ายังไม่ได้แจ้งผู้ดูแลระบบ'
+    : 'HTTP ' + r.status));
   if (url === '/api/login' && j.csrfToken) CSRF_TOKEN = j.csrfToken;
   return j;
 }

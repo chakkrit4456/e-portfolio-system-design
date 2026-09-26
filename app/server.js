@@ -466,7 +466,7 @@ app.post('/api/ai/chat', auth, wrap(async (req, res) => {
     const { text, action } = isAdmin(req) ? extractUserAction(out) : { text: out, action: null };
     res.json({ text: text || (action ? 'ตรวจสอบรายชื่อด้านล่าง แล้วกด “ยืนยันเพิ่มผู้ใช้”' : '(ไม่มีคำตอบ)'), action });
   } catch (e) {
-    res.status(502).json({ error: e.message });
+    res.status(422).json({ error: e.message || 'AI ตอบกลับผิดพลาด' });
   }
 }));
 
@@ -479,7 +479,7 @@ app.post('/api/ai/polish', auth, wrap(async (req, res) => {
     ]);
     res.json({ text });
   } catch (e) {
-    res.status(502).json({ error: e.message });
+    res.status(422).json({ error: e.message || 'AI ตอบกลับผิดพลาด' });
   }
 }));
 
