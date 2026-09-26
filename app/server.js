@@ -418,6 +418,60 @@ app.post('/api/ai/test', admin, wrap(async (req, res) => {
   }
 }));
 
+// ตรวจความพร้อมของสิ่งที่ต้องใช้เชื่อมต่อ AI (ไม่เรียกโมเดล ไม่เสีย token)
+app.get('/api/ai/check', admin, wrap(async (req, res) => {
+  const items = [];
+  const add = (name, ok, detail, fix) => items.push({ name, ok, detail, fix: ok ? '' : fix || '' });
+  const nodeOk = ver => { const [a, b] = process.versions.node.split('.').map(Number); return a > ver[0] || (a === ver[0] && b >= ver[1]); };
+
+  add('Node.js ≥ 20.6', nodeOk([20, 6]), 'v' + process.versions.node, 'อัปเกรด Node.js เป็น 20.6 ขึ้นไป (แนะนำ 22 LTS)');
+  add('fetch / AbortSignal.timeout ในตัว', typeof fetch === 'function' && typeof AbortSignal.timeout === 'function',
+    typeof fetch === 'function' ? 'มี' : 'ไม่มี', 'ต้องใช้ Node.js 18 ขึ้นไป');
+  add('OpenSSL / TLS', !!process.versions.openssl, 'OpenSSL ' + (process.versions.openssl || '-'), 'ติดตั้ง Node.js รุ่นที่มี OpenSSL');
+
+  const pkg = require('./package.json');
+  const missing = Object.keys(pkg.dependencies || {}).filter(d => { try { require.resolve(d); return false; } catch (e) { return true; } });
+  add('แพ็กเกจ npm (' + Object.keys(pkg.dependencies || {}).length + ' รายการ)', !missing.length,
+    missing.length ? 'ขาด: ' + missing.join(', ') : 'ครบ', 'รันในโฟลเดอร์แอป: npm ci --omit=dev แล้วรีสตาร์ทบริการ');
+
+  const a = await getAi();
+  let key = true;
+  try { const { rows } = await pool.query("SELECT value FROM settings WHERE key='ai'"); key = !(rows[0] && rows[0].value.apiKey && !a.apiKey); } catch (e) { /* ignore */ }
+  add('ตั้งค่า Base URL และ Model', !!(a.baseUrl && a.model), a.baseUrl ? a.baseUrl + ' · ' + (a.model || '(ไม่มี model)') : 'ยังไม่ได้ตั้ง', 'กรอก Base URL และ Model แล้วกดบันทึก');
+  add('API Key', a.provider === 'local' || !!a.apiKey, a.apiKey ? 'บันทึกไว้แล้ว (…' + a.apiKey.slice(-4) + ')' : a.provider === 'local' ? 'ไม่จำเป็นสำหรับ Local LLM' : key ? 'ยังไม่ได้ใส่' : 'ถอดรหัสไม่ได้',
+    key ? 'ใส่ API Key แล้วกดบันทึก' : 'SESSION_SECRET เปลี่ยนไป — ใส่ API Key ใหม่แล้วกดบันทึก');
+
+  if (a.baseUrl) {
+    let url;
+    try { url = new URL(a.baseUrl); } catch (e) { /* invalid */ }
+    add('รูปแบบ Base URL', !!url && /^https?:$/.test(url.protocol), a.baseUrl, 'ต้องขึ้นต้นด้วย http:// หรือ https://');
+    if (url) {
+      try {
+        const { address } = await require('dns').promises.lookup(url.hostname);
+        add('DNS: ' + url.hostname, true, address);
+        try {
+          const headers = a.apiKey ? { Authorization: 'Bearer ' + a.apiKey } : {};
+          const r = await fetch(a.baseUrl.replace(/\/$/, '') + '/models', { headers, signal: AbortSignal.timeout(10000) });
+          add('เชื่อมต่อ HTTPS ถึง endpoint', true, 'ตอบกลับ HTTP ' + r.status);
+          if (r.status === 401 || r.status === 403) add('API Key ใช้ได้', false, 'HTTP ' + r.status, 'API Key ไม่ถูกต้องหรือหมดอายุ — สร้าง key ใหม่ที่ผู้ให้บริการ');
+          else if (r.ok && a.model) {
+            const j = await r.json().catch(() => ({}));
+            const ids = Array.isArray(j.data) ? j.data.map(m => m.id) : [];
+            if (ids.length) add('มี model "' + a.model + '"', ids.includes(a.model), ids.includes(a.model) ? 'พบใน endpoint' : 'ไม่พบใน ' + ids.length + ' model', 'ตรวจชื่อ model ให้ตรงกับของผู้ให้บริการ');
+          }
+        } catch (e) {
+          const why = e.name === 'TimeoutError' ? 'หมดเวลา 10 วินาที' : (e.cause && (e.cause.code || e.cause.message)) || e.message;
+          add('เชื่อมต่อ HTTPS ถึง endpoint', false, why,
+            /CERT|SSL|TLS/i.test(why) ? 'ใบรับรอง SSL: apt-get install -y ca-certificates แล้วรีสตาร์ทบริการ' : 'ตรวจ firewall/proxy ของเซิร์ฟเวอร์ให้ออก internet พอร์ต 443 ได้');
+        }
+      } catch (e) {
+        add('DNS: ' + url.hostname, false, e.code || e.message, 'เซิร์ฟเวอร์หาชื่อโดเมนไม่เจอ — ตรวจ /etc/resolv.conf หรือการเชื่อมต่อ internet');
+      }
+    }
+  }
+  res.json({ ok: items.every(i => i.ok), items });
+}));
+
 async function portfolioContext(id) {
   const [u, w, k] = await Promise.all([
     pool.query('SELECT name,position,level FROM users WHERE id=$1', [id]),
