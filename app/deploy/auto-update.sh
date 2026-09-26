@@ -26,7 +26,11 @@ exec 9>"/run/$APP_NAME-update.lock"
 flock -n 9 || { log "มีการ deploy ทำงานอยู่แล้ว — ข้าม"; exit 0; }
 
 cd "$SRC_REPO"
-git fetch --quiet origin "$BRANCH"
+export GIT_TERMINAL_PROMPT=0
+if ! git fetch --quiet origin "$BRANCH"; then
+  log "ดึงโค้ดจาก $(git remote get-url origin) ไม่ได้ — ถ้า repo เป็น private ให้รัน install.sh เพื่อตั้ง deploy key"
+  exit 1
+fi
 OLD="$(git rev-parse HEAD)"
 NEW="$(git rev-parse "origin/$BRANCH")"
 if [ "$OLD" = "$NEW" ] && [ "$FORCE" = 0 ]; then exit 0; fi

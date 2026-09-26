@@ -400,13 +400,58 @@ fi
 step "7. auto deploy (อัปเดตอัตโนมัติเมื่อมี commit ใหม่บน git)"
 UPD_TIMER="/etc/systemd/system/$APP_NAME-update.timer"
 SRC_REPO="/opt/$APP_NAME-src"
+DEPLOY_KEY="/root/.ssh/${APP_NAME}_deploy"
+export GIT_TERMINAL_PROMPT=0
+git_can_read() { git ls-remote -q "$1" >/dev/null 2>&1; }
+# repo private: สร้าง deploy key (อ่านอย่างเดียว) ให้ root ใช้ดึงโค้ดผ่าน SSH -> echo URL ที่ใช้ได้
+ensure_repo_access() {
+  local url="$1" slug
+  git_can_read "$url" && { echo "$url"; return 0; }
+  slug="$(echo "$url" | sed -E 's#^(https://([^@/]*@)?github\.com/|git@github\.com:)##; s#\.git$##')"
+  warn "อ่าน repo $url ไม่ได้ (repo เป็น private?)" >&2
+  [ -n "$slug" ] || return 1
+  ask "ตั้ง deploy key (SSH อ่านอย่างเดียว) ให้เซิร์ฟเวอร์ดึงโค้ดจาก GitHub?" >&2 || return 1
+  have ssh || apt_install openssh-client >&2
+  mkdir -p /root/.ssh && chmod 700 /root/.ssh
+  [ -f "$DEPLOY_KEY" ] || ssh-keygen -q -t ed25519 -N "" -C "$APP_NAME@$(hostname)" -f "$DEPLOY_KEY"
+  ssh-keyscan -q github.com >> /root/.ssh/known_hosts 2>/dev/null; sort -u -o /root/.ssh/known_hosts /root/.ssh/known_hosts
+  if ! grep -q "$DEPLOY_KEY" /root/.ssh/config 2>/dev/null; then
+    printf 'Host github.com\n  IdentityFile %s\n  IdentitiesOnly yes\n' "$DEPLOY_KEY" >> /root/.ssh/config; chmod 600 /root/.ssh/config
+  fi
+  url="git@github.com:$slug.git"
+  {
+    echo
+    echo "  ${Y}>>> เพิ่ม key นี้ที่ https://github.com/$slug/settings/keys → Add deploy key (ไม่ต้องติ๊ก write access):${N}"
+    echo
+    cat "$DEPLOY_KEY.pub"
+    echo
+  } >&2
+  for _ in 1 2 3; do
+    [ "$ASSUME_YES" = 1 ] || read -r -p "  ?  เพิ่ม key ใน GitHub แล้วกด Enter " _ </dev/tty || true
+    git_can_read "$url" && { ok "เชื่อมต่อ GitHub ด้วย deploy key ได้แล้ว" >&2; echo "$url"; return 0; }
+    bad "ยังอ่าน repo ไม่ได้ — ตรวจว่าเพิ่ม key ถูก repo แล้ว" >&2
+    [ "$ASSUME_YES" = 1 ] && break
+  done
+  return 1
+}
+
 if [ -f "$UPD_TIMER" ]; then
   ok "เปิด auto deploy แล้ว (ตรวจทุก 2 นาที) — log: journalctl -u $APP_NAME-update -n 30"
+  cur="$(git -C "$SRC_REPO" remote get-url origin 2>/dev/null || true)"
+  if [ -n "$cur" ] && ! git_can_read "$cur"; then
+    problem "auto deploy ดึงโค้ดจาก $cur ไม่ได้"
+    if new="$(ensure_repo_access "$cur")"; then
+      git -C "$SRC_REPO" remote set-url origin "$new"; PROBLEMS=$((PROBLEMS - 1))
+      systemctl start "$APP_NAME-update" || true
+      journalctl -u "$APP_NAME-update" -n 5 --no-pager -o cat | sed 's/^/  | /'
+    fi
+  fi
 elif ask "เปิด auto deploy? (ตรวจ git ทุก 2 นาที มี commit ใหม่จะอัปเดตเอง และ rollback ถ้าแอปไม่ขึ้น)" N; then
   have git || apt_install git
   REPO_URL="$(git -C "$SRC_DIR" remote get-url origin 2>/dev/null || true)"
-  REPO_URL="$(prompt "URL ของ git repo (repo private ใส่ https://<token>@github.com/...)" "${REPO_URL:-https://github.com/chakkrit4456/e-portfolio-system-design.git}")"
+  REPO_URL="$(prompt "URL ของ git repo" "${REPO_URL:-https://github.com/chakkrit4456/e-portfolio-system-design.git}")"
   BRANCH="$(prompt "branch ที่จะ deploy" "main")"
+  REPO_URL="$(ensure_repo_access "$REPO_URL")" || die "อ่าน git repo ไม่ได้ — ยังไม่เปิด auto deploy"
   if [ -d "$SRC_REPO/.git" ]; then git -C "$SRC_REPO" remote set-url origin "$REPO_URL"
   else git clone --quiet --branch "$BRANCH" "$REPO_URL" "$SRC_REPO"; fi
   chmod 700 "$SRC_REPO"
