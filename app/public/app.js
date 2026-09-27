@@ -84,7 +84,9 @@ const stOf = s => ST[s] || ST['รอตรวจสอบ'];
 const withSt = w => { const c = stOf(w.status); return { ...w, stBg: c[0], stFg: c[1], stIcon: c[2], icon: TYPE_ICON[w.type] || 'bi bi-file-text' }; };
 const isAdmin = () => S.me && S.me.role === 'admin';
 // รอบการประเมิน/ปีงบประมาณที่ผู้ดูแลกำหนด (มาจาก /api/portfolio)
-const PER = () => (S.data && S.data.period) || { fiscalYear: '', round: '', start: '', end: '' };
+// PER = รอบปัจจุบันของระบบ (ปีงบที่แสดงทั่วไป) · VPER = รอบที่กำลังดู KPI/สมรรถนะ (ผู้ดูแลเลือกได้)
+const PER = () => (S.data && S.data.current) || { fiscalYear: '', round: '', start: '', end: '' };
+const VPER = () => (S.data && S.data.period) || PER();
 const thDate = iso => iso ? new Date(iso + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
 const periodRange = () => thDate(PER().start) + ' – ' + thDate(PER().end);
 
@@ -143,7 +145,7 @@ function toast(msg) {
 }
 
 async function loadData() {
-  const d = await api('/api/portfolio');
+  const d = await api('/api/portfolio' + (S.viewPeriod ? '?period=' + S.viewPeriod : ''));
   S.data = d;
   S.me = d.user;
   restoreChat();
@@ -409,11 +411,18 @@ ${list.length ? '' : `<div style="${card}">${emptyRow('ยังไม่มี�
 }
 
 // ---------------- page: KPI ----------------
+// ผู้ดูแลเลือกดู KPI/สมรรถนะของรอบใดก็ได้ (ของตัวเอง); บุคลากรเห็นรอบปัจจุบัน
+function periodSelect(act = 'viewPeriod', cur = VPER().id) {
+  const L = S.data.periods || [];
+  if (!isAdmin() || !L.length) return '';
+  const curId = PER().id;
+  return `<label style="display:flex;gap:8px;align-items:center;font-size:13px;color:#5A5052"><i class="bi bi-calendar3"></i><select data-change="${act}" style="padding:7px 10px;border:1px solid #D9CCCB;border-radius:8px;font-size:13px;background:#fff">${L.map(p => `<option value="${p.id}" ${p.id === cur ? 'selected' : ''}>${esc(p.round + ' · ปีงบ ' + p.fiscalYear + (p.id === curId ? ' (ปัจจุบัน)' : ''))}</option>`).join('')}</select></label>`;
+}
 function pageKpi(D) {
   const d = S.data;
   const cols = 'grid-template-columns:minmax(0,2.6fr) 70px 90px 90px minmax(0,1.4fr) 70px';
   return `
-${pageHead('KPI และสมรรถนะ', esc(PER().round + ' ปีงบประมาณ ' + PER().fiscalYear + ' (' + periodRange() + ')'))}
+${pageHead('KPI และสมรรถนะ', esc(VPER().round + ' ปีงบประมาณ ' + VPER().fiscalYear + ' (' + thDate(VPER().start) + ' – ' + thDate(VPER().end) + ')'), periodSelect())}
 <div style="${card};overflow:hidden" class="table-wrap">
   <div class="table-min" style="min-width:720px">
     <div style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #EFE8E6"><div style="font-weight:600;font-size:15px">ผลสัมฤทธิ์ตามตัวชี้วัด</div><div style="font-size:13px">คะแนนถ่วงน้ำหนัก <b style="color:#7B1E2B;font-size:16px">${D.kpiScore}</b> / 5.00</div></div>
@@ -444,26 +453,47 @@ ${pageHead('KPI และสมรรถนะ', esc(PER().round + ' ปีง�
 // ---------------- page: AI settings (admin) ----------------
 function pagePeriod() {
   if (!isAdmin()) return '';
-  const p = PER();
+  const L = S.periodsAdmin;
+  if (!L) { loadPeriods(); return `<div style="${card}">${emptyRow('กำลังโหลด…')}</div>`; }
+  const ed = S.perEdit ? L.periods.find(x => x.id === S.perEdit) : null;
+  const p = ed || PER();
   const y = +p.fiscalYear || new Date().getFullYear() + 543;
   const presets = [[1, 'รอบที่ 1', '10-01', '03-31', -1, 0], [2, 'รอบที่ 2', '04-01', '09-30', 0, 0], [0, 'ทั้งปีงบประมาณ', '10-01', '09-30', -1, 0]];
+  const cols = 'grid-template-columns:80px minmax(0,1.6fr) minmax(0,1.6fr) 60px minmax(0,1.4fr) 76px';
   return `
-${pageHead('รอบการประเมิน', 'กำหนดปีงบประมาณและช่วงเวลาการประเมิน — มีผลกับการแสดงผลของผู้ใช้ทุกคน')}
-<form data-form="period" style="${card};padding:22px;display:flex;flex-direction:column;gap:16px;max-width:640px">
+${pageHead('รอบการประเมิน', 'KPI และสมรรถนะแยกเก็บตามรอบ — รอบปัจจุบันคือรอบที่บุคลากรเห็นและผู้ดูแลแก้ไขเป็นค่าเริ่มต้น')}
+<div style="${card};overflow:hidden" class="table-wrap"><div class="table-min" style="min-width:680px">
+  <div style="display:grid;${cols};gap:12px;padding:12px 20px;background:#FAF7F6;border-bottom:1px solid #EFE8E6;font-size:12px;color:#6B6264;font-weight:600"><div>ปีงบ</div><div>รอบ</div><div>ช่วงเวลา</div><div>KPI</div><div>สถานะ</div><div></div></div>
+  ${L.periods.map(x => { const cur = x.id === L.currentId; return `
+  <div style="display:grid;${cols};gap:12px;padding:12px 20px;border-bottom:1px solid #F3EEEC;font-size:13.5px;align-items:center;${x.id === S.perEdit ? 'background:#FDFAF3' : ''}">
+    <div style="font-weight:600">${esc(x.fiscalYear)}</div><div>${esc(x.round)}</div><div style="color:#5A5052">${esc(thDate(x.start) + ' – ' + thDate(x.end))}</div><div>${x.kpis}</div>
+    <div>${cur ? '<span style="font-size:12px;font-weight:600;background:#E6F2EA;color:#1E6B3A;padding:2px 9px;border-radius:20px">รอบปัจจุบัน</span>' : `<button class="btn btn-outline" style="font-size:12px;padding:3px 10px" data-act="perCurrent" data-id="${x.id}">ตั้งเป็นรอบปัจจุบัน</button>`}</div>
+    <div style="display:flex;gap:2px"><button class="icon-btn" data-act="perEdit" data-id="${x.id}" title="แก้ไข"><i class="bi bi-pencil"></i></button>${cur ? '' : `<button class="icon-btn" data-act="perDel" data-id="${x.id}" title="ลบ"><i class="bi bi-trash3"></i></button>`}</div>
+  </div>`; }).join('')}
+</div></div>
+<form data-form="period" style="${card};padding:22px;display:flex;flex-direction:column;gap:16px;max-width:680px">
+  <div style="font-weight:600;font-size:15px">${ed ? 'แก้ไขรอบ: ' + esc(ed.round + ' ปีงบ ' + ed.fiscalYear) : 'เพิ่มรอบการประเมินใหม่'}</div>
   <div style="display:grid;grid-template-columns:140px 1fr;gap:12px">
-    <label class="field">ปีงบประมาณ (พ.ศ.)<input id="perYear" name="fiscalYear" type="number" min="2500" max="2700" required value="${esc(p.fiscalYear)}"></label>
-    <label class="field">ชื่อรอบการประเมิน<input id="perRound" name="round" required maxlength="100" value="${esc(p.round)}" placeholder="รอบการประเมินที่ 1 (1 ต.ค. – 31 มี.ค.)"></label>
+    <label class="field">ปีงบประมาณ (พ.ศ.)<input id="perYear" name="fiscalYear" type="number" min="2500" max="2700" required value="${esc(ed ? ed.fiscalYear : y)}"></label>
+    <label class="field">ชื่อรอบการประเมิน<input id="perRound" name="round" required maxlength="100" value="${esc(ed ? ed.round : '')}" placeholder="รอบการประเมินที่ 1"></label>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-    <label class="field">วันเริ่มต้น<input id="perStart" name="start" type="date" required value="${esc(p.start)}"></label>
-    <label class="field">วันสิ้นสุด<input id="perEnd" name="end" type="date" required value="${esc(p.end)}"></label>
+    <label class="field">วันเริ่มต้น<input id="perStart" name="start" type="date" required value="${esc(ed ? ed.start : '')}"></label>
+    <label class="field">วันสิ้นสุด<input id="perEnd" name="end" type="date" required value="${esc(ed ? ed.end : '')}"></label>
   </div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span style="font-size:12.5px;color:#6B6264">ตั้งค่าด่วน ปีงบ ${y}:</span>
-    ${presets.map(([n, label, s, e, ys, ye]) => `<button type="button" class="btn btn-outline" style="font-size:12.5px;padding:5px 10px" data-act="perPreset" data-round="${n ? 'รอบการประเมินที่ ' + n : 'ปีงบประมาณ ' + y}" data-start="${y - 543 + ys}-${s}" data-end="${y - 543 + ye}-${e}">${label}</button>`).join('')}
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span style="font-size:12.5px;color:#6B6264">ตั้งค่าด่วนตามปีงบในช่อง:</span>
+    ${presets.map(([n, label, st, en, ys, ye]) => `<button type="button" class="btn btn-outline" style="font-size:12.5px;padding:5px 10px" data-act="perPreset" data-round="${n ? 'รอบการประเมินที่ ' + n : 'ทั้งปีงบประมาณ'}" data-ms="${st}" data-me="${en}" data-ys="${ys}" data-ye="${ye}">${label}</button>`).join('')}
   </div>
-  <div style="font-size:12.5px;color:#8A7F81">ปัจจุบัน: ${esc(p.round)} ปีงบประมาณ ${esc(p.fiscalYear)} · ${esc(periodRange())}</div>
-  <div><button type="submit" class="btn btn-primary">${S.busy ? 'กำลังบันทึก…' : 'บันทึก'}</button></div>
+  ${ed ? '' : `
+  <label style="display:flex;gap:8px;align-items:center;font-size:13.5px"><input type="checkbox" name="copyFrom" value="${L.currentId}" checked> คัดลอกตัวชี้วัดและสมรรถนะของทุกคนจากรอบปัจจุบัน (ผลงานและระดับที่ประเมินได้เริ่มที่ 0)</label>
+  <label style="display:flex;gap:8px;align-items:center;font-size:13.5px"><input type="checkbox" name="makeCurrent" value="1" checked> ตั้งเป็นรอบปัจจุบันทันที</label>`}
+  <div style="display:flex;gap:8px"><button type="submit" class="btn btn-primary">${S.busy ? 'กำลังบันทึก…' : ed ? 'บันทึกการแก้ไข' : 'เพิ่มรอบ'}</button>${ed ? '<button type="button" class="btn btn-outline" data-act="perEdit" data-id="">ยกเลิก</button>' : ''}</div>
 </form>`;
+}
+async function loadPeriods() {
+  if (S._loadingPer) return;
+  S._loadingPer = true;
+  try { S.periodsAdmin = await api('/api/periods'); render(); } catch (e) { toast(e.message); } finally { S._loadingPer = false; }
 }
 
 function pageSettings() {
@@ -873,7 +903,7 @@ function viewChat() {
   const iv = S.mode === 'interview';
   const msgs = iv ? S.ivMsgs : S.askMsgs;
   const kpiStep = iv && !S.ivDone && S.ivStep === KPI_Q;
-  const chips = kpiStep ? (S.data.kpis.length ? [] : ['ยังไม่มีตัวชี้วัดในระบบ']) : iv && !S.ivDone ? (QUESTIONS[S.ivStep] || {}).chips || [] : !iv ? ['สรุปผลงานเด่นของฉัน', 'KPI ใดยังต่ำกว่าเป้า', 'แนะนำการพัฒนาตนเอง'] : [];
+  const chips = kpiStep ? (S.data.kpiOptions.length ? [] : ['ยังไม่มีตัวชี้วัดในระบบ']) : iv && !S.ivDone ? (QUESTIONS[S.ivStep] || {}).chips || [] : !iv ? ['สรุปผลงานเด่นของฉัน', 'KPI ใดยังต่ำกว่าเป้า', 'แนะนำการพัฒนาตนเอง'] : [];
   const tabs = [['interview', 'สัมภาษณ์', 'bi bi-mic'], ['ask', 'ถาม‑ตอบ', 'bi bi-chat-dots']];
   const dots = [0, 1, 2].map(i => `<span style="animation:blink 1.2s infinite;animation-delay:${i * 0.2}s;width:6px;height:6px;border-radius:50%;background:#8A7F81;display:inline-block"></span>`).join('');
   return hint + fab + `
@@ -901,7 +931,7 @@ function viewChat() {
     <div style="border:1px solid #E3D3B0;background:#FDFAF3;border-radius:12px;padding:14px;margin-top:4px">
       <div style="font-size:13px;font-weight:700;color:#4A0F18;display:flex;gap:6px;align-items:center"><i class="bi bi-file-earmark-text"></i>ร่างบันทึกผลงาน</div>
       <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">${QUESTIONS.map((q, i) => `<div style="font-size:12.5px;line-height:1.5"><span style="color:#8A7F81">${q.k}:</span> ${esc(S.ivAnswers[i] || '-')}</div>`).join('')}</div>
-      ${S.data.kpis.length ? `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #E3D3B0">${ivKpiPicker()}</div>` : ''}
+      ${S.data.kpiOptions.length ? `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #E3D3B0">${ivKpiPicker()}</div>` : ''}
       ${S.ivEvidence.length ? `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #E3D3B0">${ivEvidenceList()}</div>` : ''}
       ${S.draftSummary ? `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #E3D3B0;font-size:13px;line-height:1.7;white-space:pre-wrap">${esc(S.draftSummary)}</div>` : ''}
       <div style="display:flex;gap:8px;margin-top:12px">
@@ -910,7 +940,7 @@ function viewChat() {
       </div>
     </div>` : ''}
   </div>
-  ${kpiStep && S.data.kpis.length ? `<div style="padding:8px 16px 0;max-height:190px;overflow:auto">${ivKpiPicker()}</div>` : ''}
+  ${kpiStep && S.data.kpiOptions.length ? `<div style="padding:8px 16px 0;max-height:190px;overflow:auto">${ivKpiPicker()}</div>` : ''}
   ${iv && !S.ivDone && S.ivEvidence.length ? `<div style="padding:8px 16px 0;max-height:120px;overflow:auto">${ivEvidenceList()}</div>` : ''}
   ${chips.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 16px 0">${chips.map(c => `<button data-act="chip" data-v="${esc(c)}" class="h-outline" style="font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid #E6DEDC;color:#5A5052">${esc(c)}</button>`).join('')}</div>` : ''}
   <div style="padding:10px 12px 12px">
@@ -932,7 +962,7 @@ function workKpiPicker(w) {
   return `
       <fieldset style="border:1px solid #EFE8E6;border-radius:12px;padding:10px 14px 12px;margin:0;display:flex;flex-direction:column;gap:8px">
         <legend style="font-size:13px;color:#5A5052;padding:0 6px">ตัวชี้วัดที่เชื่อมโยง</legend>
-        ${S.data.kpis.map(k => `
+        ${S.data.kpiOptions.map(k => `
         <div style="display:flex;gap:10px;align-items:center;font-size:13.5px;flex-wrap:wrap">
           <label style="display:flex;gap:8px;align-items:flex-start;flex:1;min-width:200px"><input type="checkbox" name="kpi_ck" value="${k.id}" ${links.has(k.id) ? 'checked' : ''} style="margin-top:3px"><span>${esc(k.name)}</span></label>
         </div>`).join('')}
@@ -1009,7 +1039,7 @@ function viewModal() {
       </div>
       <label class="field">ผู้มอบหมาย / เอกสารอ้างอิง<input name="ref" value="${esc(w.ref)}" placeholder="คำสั่ง สอศ. ที่ …/${esc(PER().fiscalYear)}"></label>
       <label class="field">ผลผลิต / ผลลัพธ์<textarea name="result" rows="2">${esc(w.result)}</textarea></label>
-      ${S.data.kpis.length ? workKpiPicker(w) : `<label class="field">ตัวชี้วัดที่เชื่อมโยง<input name="kpi" value="${esc(w.kpi)}" placeholder="KPI 1, 2"></label>`}
+      ${S.data.kpiOptions.length ? workKpiPicker(w) : `<label class="field">ตัวชี้วัดที่เชื่อมโยง<input name="kpi" value="${esc(w.kpi)}" placeholder="KPI 1, 2"></label>`}
       <label class="field">สรุปผลการปฏิบัติงาน<textarea name="summary" rows="4">${esc(w.summary)}</textarea></label>
       ${isAdmin() && m.id ? `<label class="field">สถานะ (ผู้ดูแลระบบ)<select name="status">${opt(WORK_STATUSES, w.status)}</select></label>` : ''}`;
   } else if (m.type === 'evidence') {
@@ -1067,7 +1097,7 @@ function viewModal() {
       <div style="font-size:12px;color:#8A7F81">การเปลี่ยนบทบาทหรือรหัสผ่านจะทำให้ผู้ใช้นั้นต้องเข้าสู่ระบบใหม่</div>`;
   } else if (m.type === 'kpiAdmin') {
     title = 'KPI และสมรรถนะ — ' + esc(S.kpiEdit.name);
-    body = kpiAdminBody();
+    body = periodSelect('kpiEditPeriod', S.kpiEdit.periodId) + kpiAdminBody();
   } else if (m.type === 'user') {
     title = 'เพิ่มผู้ใช้';
     body = `
@@ -1171,12 +1201,12 @@ const EV_Q = QUESTIONS.findIndex(q => q.k === 'หลักฐาน');
 // S.ivKpis = { [kpiId]: 1 } — KPI ที่ผลงานนี้สนับสนุน (อ้างอิง ไม่นับเป็นคะแนน)
 function ivKpiPicker() {
   return `<div style="font-size:12px;color:#6B6264;margin-bottom:6px">เลือกตัวชี้วัดที่งานนี้สนับสนุน</div>
-  <div style="display:flex;flex-direction:column;gap:6px">${S.data.kpis.map(k => { const on = k.id in S.ivKpis; return `
+  <div style="display:flex;flex-direction:column;gap:6px">${S.data.kpiOptions.map(k => { const on = k.id in S.ivKpis; return `
     <div style="display:flex;gap:8px;align-items:center;font-size:12.5px;flex-wrap:wrap">
       <label style="display:flex;gap:7px;align-items:flex-start;flex:1;min-width:160px;cursor:pointer"><input type="checkbox" data-change="ivKpi" data-id="${k.id}" ${on ? 'checked' : ''} style="margin-top:2px"><span>${esc(k.name)}</span></label>
     </div>`; }).join('')}</div>`;
 }
-const ivKpiNames = () => S.data.kpis.filter(k => k.id in S.ivKpis).map(k => k.name);
+const ivKpiNames = () => S.data.kpiOptions.filter(k => k.id in S.ivKpis).map(k => k.name);
 function ivEvidenceList() {
   return `<div style="font-size:12px;color:#6B6264;margin-bottom:4px"><i class="bi bi-paperclip"></i> หลักฐานที่แนบ (จะเชื่อมกับผลงานเมื่อบันทึก)</div>
   ${S.ivEvidence.map((e, i) => `<div style="display:flex;gap:6px;align-items:center;font-size:12.5px"><i class="bi bi-file-earmark-check" style="color:#1E6B3A"></i><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.name)}</span><button data-act="rmIvEv" data-v="${i}" title="ลบไฟล์นี้" style="color:#8A7F81"><i class="bi bi-x"></i></button></div>`).join('')}`;
@@ -1264,9 +1294,9 @@ async function saveDraft() {
   S.busy = true;
   try {
     const body = { title: a[0] || 'ผลงานใหม่', type: t, ref: a[1], period: a[2], result: a[4], kpi: a[KPI_Q], summary };
-    const own = new Set(S.data.kpis.map(k => k.id));
+    const own = new Set(S.data.kpiOptions.map(k => k.id));
     const links = Object.entries(S.ivKpis).filter(([id]) => own.has(+id)).map(([id, value]) => ({ kpi_id: +id, value }));
-    if (S.data.kpis.length) body.kpi_links = links;
+    if (S.data.kpiOptions.length) body.kpi_links = links;
     const w = await api('/api/works', { method: 'POST', body });
     // หลักฐานที่แนบในแชท + ลิงก์ที่พิมพ์ในคำตอบข้อหลักฐาน -> เชื่อมกับผลงานนี้
     let evCount = 0;
@@ -1356,17 +1386,23 @@ const A = {
   uploadFor: el => set({ modal: { type: 'evidence', workId: +el.dataset.id }, formErr: '', pendingFiles: [] }),
   editUser: el => set({ modal: { type: 'userEdit', id: +el.dataset.id }, formErr: '' }),
   perPreset: el => {
-    // ปีงบอาจถูกแก้ในช่องแต่ยังไม่บันทึก — คำนวณวันจากปีในช่องกรอก
-    const y = +document.getElementById('perYear').value;
-    const shift = v => y ? v.replace(/^\d{4}/, m => String(+m + (y - (+PER().fiscalYear || y)))) : v;
-    document.getElementById('perRound').value = el.dataset.round.replace(/ปีงบประมาณ \d+/, 'ปีงบประมาณ ' + y);
-    document.getElementById('perStart').value = shift(el.dataset.start);
-    document.getElementById('perEnd').value = shift(el.dataset.end);
+    // คำนวณวันจากปีงบ พ.ศ. ในช่องกรอก: รอบที่ 1 เริ่ม 1 ต.ค. ของปีก่อน
+    const ce = (+document.getElementById('perYear').value || new Date().getFullYear() + 543) - 543;
+    document.getElementById('perRound').value = el.dataset.round;
+    document.getElementById('perStart').value = (ce + +el.dataset.ys) + '-' + el.dataset.ms;
+    document.getElementById('perEnd').value = (ce + +el.dataset.ye) + '-' + el.dataset.me;
+  },
+  perEdit: el => set({ perEdit: +el.dataset.id || null }),
+  perCurrent: el => reloadAfter(api('/api/periods/' + el.dataset.id + '/current', { method: 'POST' }).then(() => { S.periodsAdmin = null; S.viewPeriod = null; }), 'ตั้งรอบปัจจุบันแล้ว'),
+  perDel: el => {
+    const p = S.periodsAdmin.periods.find(x => x.id === +el.dataset.id);
+    if (!confirm('ลบรอบ "' + p.round + ' ปีงบ ' + p.fiscalYear + '"?')) return;
+    reloadAfter(api('/api/periods/' + p.id, { method: 'DELETE' }).then(() => { S.periodsAdmin = null; }), 'ลบรอบแล้ว');
   },
   editKpi: async el => {
     const id = +el.dataset.id;
     try {
-      const r = await api('/api/users/' + id + '/kpis');
+      const r = await api('/api/users/' + id + '/kpis' + (el.dataset.period ? '?period=' + el.dataset.period : ''));
       S.kpiEdit = { id, name: ((S.users || []).find(u => u.id === id) || {}).name || '', ...r };
       set({ modal: { type: 'kpiAdmin' }, formErr: '' });
     } catch (e) { toast(e.message); }
@@ -1427,19 +1463,24 @@ const FORMS = {
     if (S.loginErr) { const p = document.getElementById('loginPass'); if (p) p.focus(); }
   },
   period: async fd => {
-    await api('/api/settings/period', { method: 'PUT', body: Object.fromEntries(fd.entries()) });
-    return 'บันทึกรอบการประเมินแล้ว';
+    const b = Object.fromEntries(fd.entries());
+    b.makeCurrent = !!b.makeCurrent;
+    if (S.perEdit) await api('/api/periods/' + S.perEdit, { method: 'PUT', body: b });
+    else { await api('/api/periods', { method: 'POST', body: b }); if (b.makeCurrent) S.viewPeriod = null; }
+    const msg = S.perEdit ? 'บันทึกการแก้ไขรอบแล้ว' : 'เพิ่มรอบการประเมินแล้ว';
+    Object.assign(S, { periodsAdmin: null, perEdit: null });
+    return msg;
   },
   kpiAdmin: async () => {
     syncKpiEdit();
     const e = S.kpiEdit;
-    await api('/api/users/' + e.id + '/kpis', { method: 'PUT', body: { kpis: e.kpis, comps: e.comps, works: e.works.map(w => ({ id: w.id, status: w.status })) } });
+    await api('/api/users/' + e.id + '/kpis', { method: 'PUT', body: { periodId: e.periodId, kpis: e.kpis, comps: e.comps, works: e.works.map(w => ({ id: w.id, status: w.status })) } });
     S.users = null;
     return 'บันทึก KPI และสมรรถนะแล้ว';
   },
   work: async fd => {
     const body = Object.fromEntries(fd.entries());
-    if (S.data.kpis.length) {
+    if (S.data.kpiOptions.length) {
       body.kpi_links = fd.getAll('kpi_ck').map(id => ({ kpi_id: +id }));
       Object.keys(body).forEach(k => { if (k === 'kpi_ck') delete body[k]; });
     }
@@ -1520,9 +1561,11 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const el = e.target;
   if (el.id === 'fileInput') { S.pendingFiles.push(...el.files); render(); return; }
+  if (el.dataset && el.dataset.change === 'viewPeriod') { S.viewPeriod = +el.value; reloadAfter(Promise.resolve()); return; }
+  if (el.dataset && el.dataset.change === 'kpiEditPeriod') { A.editKpi({ dataset: { id: S.kpiEdit.id, period: el.value } }); return; }
   if (el.id === 'chatFile') { uploadChatFiles([...el.files]); return; }
   if (el.dataset && el.dataset.change === 'ivKpi') {
-    const k = S.data.kpis.find(x => x.id === +el.dataset.id);
+    const k = S.data.kpiOptions.find(x => x.id === +el.dataset.id);
     if (el.checked) S.ivKpis[k.id] = 1; else delete S.ivKpis[k.id];
     if (S.ivDone) S.ivAnswers[KPI_Q] = ivKpiNames().join(', ') || '-';
     render(); return;

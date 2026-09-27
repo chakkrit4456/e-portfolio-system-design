@@ -310,7 +310,8 @@ app.post('/api/password', auth, wrap(async (req, res) => {
 // ---------- Portfolio data (everything the UI needs for the current user) ----------
 app.get('/api/portfolio', auth, wrap(async (req, res) => {
   const id = uid(req);
-  const [u, works, ev, kpis, comps, ai, period] = await Promise.all([
+  const [pid, curId] = await Promise.all([resolvePeriod(req, req.query.period), currentPeriodId()]);
+  const [u, works, ev, kpis, comps, ai, period, current, periods, kpiOptions] = await Promise.all([
     pool.query('SELECT id,username,name,position,level,group_name,supervisor,role,duties FROM users WHERE id=$1', [id]),
     pool.query(
       `SELECT w.*, (SELECT count(*)::int FROM evidence e WHERE e.work_id=w.id) AS ev,
@@ -318,10 +319,14 @@ app.get('/api/portfolio', auth, wrap(async (req, res) => {
                  FROM work_kpis wk WHERE wk.work_id=w.id) AS kpi_links
        FROM works w WHERE w.user_id=$1 ORDER BY w.created_at DESC, w.id DESC`, [id]),
     pool.query('SELECT id,work_id,name,kind,url,file_name,ev_date,status,checker FROM evidence WHERE user_id=$1 ORDER BY id', [id]),
-    pool.query('SELECT id,name,source,weight::float,target,actual,pct::float,score::float,unit FROM kpis WHERE user_id=$1 ORDER BY id', [id]),
-    pool.query('SELECT id,grp,name,expected,actual FROM competencies WHERE user_id=$1 ORDER BY id', [id]),
+    pool.query('SELECT id,name,source,weight::float,target,actual,pct::float,score::float,unit FROM kpis WHERE user_id=$1 AND period_id=$2 ORDER BY id', [id, pid]),
+    pool.query('SELECT id,grp,name,expected,actual FROM competencies WHERE user_id=$1 AND period_id=$2 ORDER BY id', [id, pid]),
     getAi(),
-    getPeriod()
+    getPeriod(pid),
+    getPeriod(curId),
+    isAdmin(req) ? listPeriods() : [],
+    // ตัวเลือก KPI ในฟอร์มผลงาน = KPI ของรอบปัจจุบันเสมอ
+    pool.query('SELECT id,name FROM kpis WHERE user_id=$1 AND period_id=$2 ORDER BY id', [id, curId])
   ]);
   if (!u.rows[0]) return res.status(401).json({ error: 'ไม่พบผู้ใช้' });
   res.json({
@@ -331,7 +336,10 @@ app.get('/api/portfolio', auth, wrap(async (req, res) => {
     kpis: kpis.rows,
     comps: comps.rows,
     ai: { ready: aiReady(ai), provider: ai.provider, model: ai.model },
-    period
+    period, // รอบที่กำลังดู (KPI/สมรรถนะ)
+    current, // รอบปัจจุบันของระบบ (ใช้แสดงปีงบทั่วไป)
+    periods,
+    kpiOptions: kpiOptions.rows
   });
 }));
 
@@ -377,7 +385,7 @@ async function recomputeKpis(userId, db = pool) {
 }
 // เชื่อมผลงานกับ KPI ของเจ้าของผลงานเท่านั้น; คืนชื่อ KPI สำหรับเก็บในช่อง works.kpi (ข้อความแสดงผล)
 async function saveWorkKpis(db, userId, workId, links) {
-  const { rows: own } = await db.query('SELECT id, name FROM kpis WHERE user_id=$1', [userId]);
+  const { rows: own } = await db.query('SELECT id, name FROM kpis WHERE user_id=$1 AND period_id=$2', [userId, await currentPeriodId()]);
   const byId = new Map(own.map(k => [k.id, k.name]));
   const clean = [];
   for (const l of links.slice(0, 50)) {
@@ -386,9 +394,10 @@ async function saveWorkKpis(db, userId, workId, links) {
     const v = num(l.value);
     clean.push({ id, value: v != null && v >= 0 ? v : 1 });
   }
-  await db.query('DELETE FROM work_kpis WHERE work_id=$1', [workId]);
+  await db.query('DELETE FROM work_kpis WHERE work_id=$1 AND kpi_id = ANY($2::int[])', [workId, own.map(k => k.id)]);
   for (const c of clean) await db.query('INSERT INTO work_kpis(work_id,kpi_id,value) VALUES($1,$2,$3)', [workId, c.id, c.value]);
-  return clean.map(c => byId.get(c.id)).join(', ') || null;
+  const { rows: all } = await db.query('SELECT string_agg(k.name, \', \' ORDER BY k.id) AS n FROM work_kpis wk JOIN kpis k ON k.id = wk.kpi_id WHERE wk.work_id=$1', [workId]);
+  return all[0].n || null;
 }
 async function inTx(fn) {
   const client = await pool.connect();
@@ -602,29 +611,114 @@ app.get('/files/:id', auth, wrap(async (req, res) => {
 
 // ---------- รอบการประเมิน / ปีงบประมาณ (ผู้ดูแลกำหนด ใช้แสดงผลทั้งระบบ) ----------
 // ปีงบประมาณไทย: 1 ต.ค. ของปีก่อน – 30 ก.ย. ของปี พ.ศ. นั้น
+// KPI/สมรรถนะแยกตามรอบ (periods); settings 'period' = { currentId } คือรอบปัจจุบันที่ทุกคนเห็นเป็นค่าเริ่มต้น
 function defaultPeriod() {
   const d = new Date();
   const fy = d.getFullYear() + 543 + (d.getMonth() >= 9 ? 1 : 0);
   const ce = fy - 543;
   return { fiscalYear: fy, round: 'รอบการประเมินที่ 1–2', start: (ce - 1) + '-10-01', end: ce + '-09-30' };
 }
-async function getPeriod() {
-  const { rows } = await pool.query("SELECT value FROM settings WHERE key='period'");
-  return { ...defaultPeriod(), ...(rows[0] ? rows[0].value : {}) };
+const PERIOD_COLS = "id, fiscal_year AS \"fiscalYear\", round, to_char(start_date,'YYYY-MM-DD') AS start, to_char(end_date,'YYYY-MM-DD') AS \"end\"";
+// เรียกตอนเริ่มระบบ: สร้างรอบแรกจากค่าเดิม (ถ้ายังไม่มี) และผูก KPI/สมรรถนะที่ยังไม่มีรอบเข้ากับรอบปัจจุบัน
+async function ensurePeriods() {
+  const { rows: s } = await pool.query("SELECT value FROM settings WHERE key='period'");
+  const cur = s[0] ? s[0].value : {};
+  let currentId = cur.currentId;
+  if (!currentId || !(await pool.query('SELECT 1 FROM periods WHERE id=$1', [currentId])).rowCount) {
+    const { rows: any } = await pool.query('SELECT id FROM periods ORDER BY start_date DESC LIMIT 1');
+    if (any[0]) currentId = any[0].id;
+    else {
+      const p = { ...defaultPeriod(), ...cur };
+      const { rows } = await pool.query('INSERT INTO periods(fiscal_year,round,start_date,end_date) VALUES($1,$2,$3,$4) RETURNING id', [p.fiscalYear, p.round, p.start, p.end]);
+      currentId = rows[0].id;
+    }
+    await pool.query("INSERT INTO settings(key,value) VALUES('period',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify({ currentId })]);
+  }
+  await pool.query('UPDATE kpis SET period_id=$1 WHERE period_id IS NULL', [currentId]);
+  await pool.query('UPDATE competencies SET period_id=$1 WHERE period_id IS NULL', [currentId]);
 }
-app.put('/api/settings/period', admin, wrap(async (req, res) => {
-  const b = req.body || {};
+async function currentPeriodId() {
+  const { rows } = await pool.query("SELECT value FROM settings WHERE key='period'");
+  return rows[0] && rows[0].value.currentId;
+}
+async function getPeriod(id) {
+  const { rows } = await pool.query('SELECT ' + PERIOD_COLS + ' FROM periods WHERE id=$1', [id || await currentPeriodId()]);
+  return rows[0] || { id: null, ...defaultPeriod() };
+}
+async function listPeriods() {
+  const { rows } = await pool.query('SELECT ' + PERIOD_COLS + ' FROM periods ORDER BY start_date DESC, id DESC');
+  return rows;
+}
+// รอบที่ขอดู: ผู้ดูแลเลือกได้ทุกรอบ (ค่าไม่ถูกต้อง = รอบปัจจุบัน)
+async function resolvePeriod(req, raw) {
+  const id = parseInt(raw, 10);
+  if (id && isAdmin(req) && (await pool.query('SELECT 1 FROM periods WHERE id=$1', [id])).rowCount) return id;
+  return currentPeriodId();
+}
+function periodFields(b) {
   const fiscalYear = parseInt(b.fiscalYear, 10);
   const round = String(b.round || '').trim().slice(0, 100);
   const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v));
-  if (!(fiscalYear >= 2500 && fiscalYear <= 2700)) return res.status(400).json({ error: 'ปีงบประมาณต้องเป็น พ.ศ. เช่น 2569' });
-  if (!round) return res.status(400).json({ error: 'กรุณาระบุชื่อรอบการประเมิน' });
-  if (!isDate(b.start) || !isDate(b.end)) return res.status(400).json({ error: 'กรุณาระบุวันเริ่มต้นและวันสิ้นสุด' });
-  if (b.start > b.end) return res.status(400).json({ error: 'วันเริ่มต้นต้องไม่เกินวันสิ้นสุด' });
-  const v = { fiscalYear, round, start: b.start, end: b.end };
-  await pool.query("INSERT INTO settings(key,value) VALUES('period',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(v)]);
-  audit(uid(req), 'period_update', fiscalYear + ' ' + round + ' ' + b.start + '..' + b.end);
-  res.json(v);
+  if (!(fiscalYear >= 2500 && fiscalYear <= 2700)) return { error: 'ปีงบประมาณต้องเป็น พ.ศ. เช่น 2569' };
+  if (!round) return { error: 'กรุณาระบุชื่อรอบการประเมิน' };
+  if (!isDate(b.start) || !isDate(b.end)) return { error: 'กรุณาระบุวันเริ่มต้นและวันสิ้นสุด' };
+  if (b.start > b.end) return { error: 'วันเริ่มต้นต้องไม่เกินวันสิ้นสุด' };
+  return { v: [fiscalYear, round, b.start, b.end] };
+}
+app.get('/api/periods', admin, wrap(async (req, res) => {
+  const [periods, currentId, counts] = await Promise.all([listPeriods(), currentPeriodId(),
+    pool.query('SELECT period_id, count(*)::int n FROM kpis GROUP BY period_id')]);
+  const n = new Map(counts.rows.map(r => [r.period_id, r.n]));
+  res.json({ currentId, periods: periods.map(p => ({ ...p, kpis: n.get(p.id) || 0 })) });
+}));
+// สร้างรอบใหม่ — copyFrom: คัดลอกตัวชี้วัด (ผลงานเริ่มที่ 0) และสมรรถนะของทุกคนจากรอบนั้น
+app.post('/api/periods', admin, wrap(async (req, res) => {
+  const b = req.body || {};
+  const f = periodFields(b);
+  if (f.error) return res.status(400).json({ error: f.error });
+  const copyFrom = parseInt(b.copyFrom, 10) || null;
+  const id = await inTx(async db => {
+    const { rows } = await db.query('INSERT INTO periods(fiscal_year,round,start_date,end_date) VALUES($1,$2,$3,$4) RETURNING id', f.v);
+    const pid = rows[0].id;
+    if (copyFrom) {
+      await db.query(
+        `INSERT INTO kpis(user_id,period_id,name,source,weight,target_value,actual_value,unit,target,actual,pct,score)
+         SELECT user_id,$1,name,source,weight,target_value,0,unit,target,NULL,0,0 FROM kpis WHERE period_id=$2 ORDER BY id`, [pid, copyFrom]);
+      await db.query(
+        'INSERT INTO competencies(user_id,period_id,grp,name,expected,actual) SELECT user_id,$1,grp,name,expected,0 FROM competencies WHERE period_id=$2 ORDER BY id', [pid, copyFrom]);
+      const { rows: us } = await db.query('SELECT DISTINCT user_id FROM kpis WHERE period_id=$1', [pid]);
+      for (const u of us) await recomputeKpis(u.user_id, db);
+    }
+    if (b.makeCurrent) await db.query("UPDATE settings SET value=$1 WHERE key='period'", [JSON.stringify({ currentId: pid })]);
+    return pid;
+  });
+  audit(uid(req), 'period_create', f.v.join(' ') + (copyFrom ? ' copy=' + copyFrom : ''));
+  res.json({ id });
+}));
+app.put('/api/periods/:id', admin, wrap(async (req, res) => {
+  const f = periodFields(req.body || {});
+  if (f.error) return res.status(400).json({ error: f.error });
+  const r = await pool.query('UPDATE periods SET fiscal_year=$1,round=$2,start_date=$3,end_date=$4 WHERE id=$5', [...f.v, +req.params.id]);
+  if (!r.rowCount) return res.status(404).json({ error: 'ไม่พบรอบการประเมิน' });
+  audit(uid(req), 'period_update', req.params.id + ' ' + f.v.join(' '));
+  res.json({ ok: true });
+}));
+app.post('/api/periods/:id/current', admin, wrap(async (req, res) => {
+  const id = +req.params.id;
+  if (!(await pool.query('SELECT 1 FROM periods WHERE id=$1', [id])).rowCount) return res.status(404).json({ error: 'ไม่พบรอบการประเมิน' });
+  await pool.query("UPDATE settings SET value=$1 WHERE key='period'", [JSON.stringify({ currentId: id })]);
+  audit(uid(req), 'period_current', String(id));
+  res.json({ ok: true });
+}));
+app.delete('/api/periods/:id', admin, wrap(async (req, res) => {
+  const id = +req.params.id;
+  if (id === await currentPeriodId()) return res.status(400).json({ error: 'ลบรอบปัจจุบันไม่ได้ — ตั้งรอบอื่นเป็นรอบปัจจุบันก่อน' });
+  const { rows } = await pool.query('SELECT (SELECT count(*) FROM kpis WHERE period_id=$1)::int + (SELECT count(*) FROM competencies WHERE period_id=$1)::int AS n', [id]);
+  if (rows[0].n) return res.status(400).json({ error: 'รอบนี้มีข้อมูล KPI/สมรรถนะอยู่ ' + rows[0].n + ' รายการ — ลบไม่ได้เพื่อเก็บประวัติ' });
+  const r = await pool.query('DELETE FROM periods WHERE id=$1', [id]);
+  if (!r.rowCount) return res.status(404).json({ error: 'ไม่พบรอบการประเมิน' });
+  audit(uid(req), 'period_delete', String(id));
+  res.json({ ok: true });
 }));
 
 // ---------- AI ----------
@@ -722,7 +816,7 @@ async function portfolioContext(id) {
   const [u, w, k, period] = await Promise.all([
     pool.query('SELECT name,position,level FROM users WHERE id=$1', [id]),
     pool.query('SELECT title,status FROM works WHERE user_id=$1 ORDER BY id', [id]),
-    pool.query('SELECT name,actual,target FROM kpis WHERE user_id=$1 ORDER BY id', [id]),
+    pool.query("SELECT name,actual,target FROM kpis WHERE user_id=$1 AND period_id=(SELECT (value->>'currentId')::int FROM settings WHERE key='period') ORDER BY id", [id]),
     getPeriod()
   ]);
   const p = u.rows[0] || {};
@@ -848,12 +942,13 @@ app.post('/api/users', admin, wrap(async (req, res) => {
 // ---------- Admin: KPI และสมรรถนะของผู้ใช้ ----------
 app.get('/api/users/:id/kpis', admin, wrap(async (req, res) => {
   const id = +req.params.id;
+  const pid = await resolvePeriod(req, req.query.period);
   const [k, c, w] = await Promise.all([
-    pool.query('SELECT id,name,source,weight::float,target_value::float,actual_value::float,unit,target,actual FROM kpis WHERE user_id=$1 ORDER BY id', [id]),
-    pool.query('SELECT id,grp,name,expected,actual FROM competencies WHERE user_id=$1 ORDER BY id', [id]),
+    pool.query('SELECT id,name,source,weight::float,target_value::float,actual_value::float,unit,target,actual FROM kpis WHERE user_id=$1 AND period_id=$2 ORDER BY id', [id, pid]),
+    pool.query('SELECT id,grp,name,expected,actual FROM competencies WHERE user_id=$1 AND period_id=$2 ORDER BY id', [id, pid]),
     pool.query('SELECT id,title,status,kpi FROM works WHERE user_id=$1 ORDER BY created_at DESC, id DESC', [id])
   ]);
-  res.json({ kpis: k.rows, comps: c.rows, works: w.rows });
+  res.json({ periodId: pid, kpis: k.rows, comps: c.rows, works: w.rows });
 }));
 
 // แทนที่ทั้งชุด: แถวที่มี id อัปเดต, ไม่มี id เพิ่มใหม่, id ที่ไม่ได้ส่งมาถูกลบ
@@ -862,6 +957,7 @@ app.put('/api/users/:id/kpis', admin, wrap(async (req, res) => {
   const b = req.body || {};
   const { rows: u } = await pool.query('SELECT username FROM users WHERE id=$1', [id]);
   if (!u[0]) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+  const pid = await resolvePeriod(req, b.periodId);
   const str = (v, max) => String(v ?? '').trim().slice(0, max);
   const kpis = (Array.isArray(b.kpis) ? b.kpis : []).slice(0, 50).map(k => ({
     id: +k.id || null, name: str(k.name, 300), source: str(k.source, 300) || null, unit: str(k.unit, 30) || null,
@@ -882,19 +978,19 @@ app.put('/api/users/:id/kpis', admin, wrap(async (req, res) => {
   await inTx(async db => {
     // ผลงานที่เชื่อม KPI ไว้ก่อนแก้ — ชื่อ KPI ที่แสดงในผลงานต้องสร้างใหม่หลังเปลี่ยนชื่อ/ลบ
     const { rows: linked } = await db.query('SELECT DISTINCT wk.work_id FROM work_kpis wk JOIN kpis k ON k.id = wk.kpi_id WHERE k.user_id=$1', [id]);
-    await db.query('DELETE FROM kpis WHERE user_id=$1 AND NOT (id = ANY($2::int[]))', [id, kpis.filter(k => k.id).map(k => k.id)]);
+    await db.query('DELETE FROM kpis WHERE user_id=$1 AND period_id=$2 AND NOT (id = ANY($3::int[]))', [id, pid, kpis.filter(k => k.id).map(k => k.id)]);
     for (const k of kpis) {
       const v = [k.name, k.source, k.weight, k.target, k.actual, k.unit];
       const r = k.id ? await db.query(
-        'UPDATE kpis SET name=$1,source=$2,weight=$3,target_value=$4,actual_value=$5,unit=$6 WHERE id=$7 AND user_id=$8', [...v, k.id, id]) : { rowCount: 0 };
+        'UPDATE kpis SET name=$1,source=$2,weight=$3,target_value=$4,actual_value=$5,unit=$6 WHERE id=$7 AND user_id=$8 AND period_id=$9', [...v, k.id, id, pid]) : { rowCount: 0 };
       if (!r.rowCount) await db.query(
-        'INSERT INTO kpis(user_id,name,source,weight,target_value,actual_value,unit) VALUES($1,$2,$3,$4,$5,$6,$7)', [id, ...v]);
+        'INSERT INTO kpis(user_id,period_id,name,source,weight,target_value,actual_value,unit) VALUES($1,$2,$3,$4,$5,$6,$7,$8)', [id, pid, ...v]);
     }
-    await db.query('DELETE FROM competencies WHERE user_id=$1 AND NOT (id = ANY($2::int[]))', [id, comps.filter(c => c.id).map(c => c.id)]);
+    await db.query('DELETE FROM competencies WHERE user_id=$1 AND period_id=$2 AND NOT (id = ANY($3::int[]))', [id, pid, comps.filter(c => c.id).map(c => c.id)]);
     for (const c of comps) {
       const v = [c.grp, c.name, c.expected, c.actual];
-      const r = c.id ? await db.query('UPDATE competencies SET grp=$1,name=$2,expected=$3,actual=$4 WHERE id=$5 AND user_id=$6', [...v, c.id, id]) : { rowCount: 0 };
-      if (!r.rowCount) await db.query('INSERT INTO competencies(user_id,grp,name,expected,actual) VALUES($1,$2,$3,$4,$5)', [id, ...v]);
+      const r = c.id ? await db.query('UPDATE competencies SET grp=$1,name=$2,expected=$3,actual=$4 WHERE id=$5 AND user_id=$6 AND period_id=$7', [...v, c.id, id, pid]) : { rowCount: 0 };
+      if (!r.rowCount) await db.query('INSERT INTO competencies(user_id,period_id,grp,name,expected,actual) VALUES($1,$2,$3,$4,$5,$6)', [id, pid, ...v]);
     }
     // สถานะการรับรองผลงานของผู้ใช้ (ผู้ดูแลตรวจแล้วเปลี่ยนสถานะ) — มีผลกับ KPI ที่นับเฉพาะผลงานที่รับรองแล้ว
     for (const x of (Array.isArray(b.works) ? b.works : []).slice(0, 500)) {
@@ -905,7 +1001,7 @@ app.put('/api/users/:id/kpis', admin, wrap(async (req, res) => {
         WHERE w.id = ANY($1::int[])`, [linked.map(r => r.work_id)]);
     await recomputeKpis(id, db);
   });
-  audit(uid(req), 'kpi_update', u[0].username + ' kpis=' + kpis.length + ' comps=' + comps.length);
+  audit(uid(req), 'kpi_update', u[0].username + ' period=' + pid + ' kpis=' + kpis.length + ' comps=' + comps.length);
   res.json({ ok: true });
 }));
 
@@ -1003,6 +1099,7 @@ app.use((err, req, res, next) => {
 (async () => {
   await migrate();
   if (await seed(pool)) console.log('Seeded demo data — users: admin / staff (password = SEED_PASSWORD)');
+  await ensurePeriods();
   const cleaned = await seed.removeDemoDataFromNewUsers(pool);
   if (cleaned) console.log('Removed demo KPI/competency rows from ' + cleaned + ' non-demo users');
   app.listen(PORT, () => console.log('BPCD e-Portfolio running at http://localhost:' + PORT));

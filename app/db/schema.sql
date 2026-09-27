@@ -100,3 +100,16 @@ CREATE TABLE IF NOT EXISTS work_kpis (
 );
 CREATE INDEX IF NOT EXISTS work_kpis_kpi_idx ON work_kpis(kpi_id);
 CREATE INDEX IF NOT EXISTS kpis_user_idx ON kpis(user_id);
+
+-- รอบการประเมิน: KPI/สมรรถนะแยกตามรอบ (period_id ที่ยังว่างถูกผูกกับรอบปัจจุบันตอนเริ่มระบบ — ensurePeriods ใน server.js)
+CREATE TABLE IF NOT EXISTS periods (
+  id          SERIAL PRIMARY KEY,
+  fiscal_year INT  NOT NULL,
+  round       TEXT NOT NULL,
+  start_date  DATE NOT NULL,
+  end_date    DATE NOT NULL
+);
+ALTER TABLE kpis ADD COLUMN IF NOT EXISTS period_id INT REFERENCES periods(id);
+ALTER TABLE competencies ADD COLUMN IF NOT EXISTS period_id INT REFERENCES periods(id);
+CREATE INDEX IF NOT EXISTS kpis_period_idx ON kpis(user_id, period_id);
+CREATE INDEX IF NOT EXISTS competencies_period_idx ON competencies(user_id, period_id);
