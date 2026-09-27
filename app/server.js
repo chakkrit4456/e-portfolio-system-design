@@ -726,7 +726,6 @@ app.post('/api/users', admin, wrap(async (req, res) => {
       [username, await bcrypt.hash(String(b.password), 10), b.name, b.position || null, b.level || null,
         b.group_name || null, b.supervisor || null, b.role === 'admin' ? 'admin' : 'staff']
     );
-    await seed.seedUserData(client, rows[0].id, false);
     await client.query('COMMIT');
     audit(uid(req), 'user_create', username);
     res.json({ id: rows[0].id, password: generated || undefined });
@@ -833,6 +832,8 @@ app.use((err, req, res, next) => {
 (async () => {
   await migrate();
   if (await seed(pool)) console.log('Seeded demo data — users: admin / staff (password = SEED_PASSWORD)');
+  const cleaned = await seed.removeDemoDataFromNewUsers(pool);
+  if (cleaned) console.log('Removed demo KPI/competency rows from ' + cleaned + ' non-demo users');
   app.listen(PORT, () => console.log('BPCD e-Portfolio running at http://localhost:' + PORT));
 })().catch(e => {
   console.error('Startup failed:', e.message);

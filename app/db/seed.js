@@ -114,3 +114,34 @@ module.exports = async function seed(pool) {
 };
 
 module.exports.seedUserData = seedUserData;
+
+// เดิมผู้ใช้ที่เพิ่มใหม่ได้ KPI/สมรรถนะตัวอย่างติดมาด้วย — ลบออกครั้งเดียว (มี flag ใน settings กันรันซ้ำ)
+// ลบเฉพาะแถวที่ค่าตรงกับข้อมูลตัวอย่างทุกช่อง ของผู้ใช้ที่ไม่ใช่ admin/staff ตัวอย่าง
+module.exports.removeDemoDataFromNewUsers = async function (pool) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const flag = await client.query(
+      "INSERT INTO settings(key,value) VALUES('cleanup_demo_kpi','true') ON CONFLICT (key) DO NOTHING RETURNING key");
+    if (!flag.rowCount) { await client.query('ROLLBACK'); return 0; }
+    const users = new Set();
+    const others = "(SELECT id FROM users WHERE username NOT IN ('admin','staff'))";
+    for (const k of KPIS) {
+      const r = await client.query(
+        'DELETE FROM kpis WHERE user_id IN ' + others + ' AND name=$1 AND source IS NOT DISTINCT FROM $2 AND weight=$3 AND target=$4 AND actual=$5 AND pct=$6 AND score=$7 RETURNING user_id', k);
+      r.rows.forEach(x => users.add(x.user_id));
+    }
+    for (const c of COMPS) {
+      const r = await client.query(
+        'DELETE FROM competencies WHERE user_id IN ' + others + ' AND grp=$1 AND name=$2 AND expected=$3 AND actual=$4 RETURNING user_id', c);
+      r.rows.forEach(x => users.add(x.user_id));
+    }
+    await client.query('COMMIT');
+    return users.size;
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+};

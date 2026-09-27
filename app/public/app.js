@@ -415,6 +415,7 @@ ${pageHead('KPI และสมรรถนะ', 'รอบการประเ
   <div class="table-min" style="min-width:720px">
     <div style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #EFE8E6"><div style="font-weight:600;font-size:15px">ผลสัมฤทธิ์ตามตัวชี้วัด</div><div style="font-size:13px">คะแนนถ่วงน้ำหนัก <b style="color:#7B1E2B;font-size:16px">${D.kpiScore}</b> / 5.00</div></div>
     <div style="display:grid;${cols};gap:12px;padding:11px 20px;background:#FAF7F6;font-size:12px;color:#6B6264;font-weight:600;border-bottom:1px solid #EFE8E6"><div>ตัวชี้วัด</div><div>น้ำหนัก</div><div>เป้าหมาย</div><div>ผลงาน</div><div>ความสำเร็จ</div><div>คะแนน</div></div>
+    ${d.kpis.length ? '' : '<div style="padding:28px 20px;text-align:center;color:#8A7F81;font-size:13.5px">ยังไม่มีข้อมูลตัวชี้วัด</div>'}
     ${d.kpis.map(k => `
     <div style="display:grid;${cols};gap:12px;padding:14px 20px;border-bottom:1px solid #F3EEEC;align-items:center;font-size:13.5px">
       <div><div style="font-weight:500">${esc(k.name)}</div><div style="font-size:12px;color:#8A7F81;margin-top:2px">${esc(k.source || '')}</div></div>
@@ -427,6 +428,7 @@ ${pageHead('KPI และสมรรถนะ', 'รอบการประเ
 <div style="${card};padding:18px 20px">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="font-weight:600;font-size:15px">สมรรถนะ (Competency)</div><div style="display:flex;gap:16px;font-size:12px;color:#6B6264"><span style="display:flex;gap:6px;align-items:center"><span style="width:12px;height:8px;background:#7B1E2B;border-radius:2px"></span>ระดับที่ประเมินได้</span><span style="display:flex;gap:6px;align-items:center"><span style="width:2px;height:12px;background:#B8913A"></span>ระดับที่คาดหวัง</span></div></div>
   <div class="comp-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:14px 40px;margin-top:18px">
+    ${d.comps.length ? '' : '<div style="grid-column:1/-1;padding:12px 0;text-align:center;color:#8A7F81;font-size:13.5px">ยังไม่มีข้อมูลสมรรถนะ</div>'}
     ${d.comps.map(c => { const g = gapInfo(c); return `
     <div>
       <div style="display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:6px;gap:8px"><span><span style="font-size:11px;color:#8A7F81;margin-right:6px">${esc(c.grp)}</span>${esc(c.name)}</span><span style="font-size:12px;font-weight:600;color:${g.gapColor};white-space:nowrap">${g.gapLabel}</span></div>
@@ -681,6 +683,7 @@ function viewPortfolio(D) {
 <div class="no-print" style="display:flex;gap:8px;align-items:center;justify-content:center;font-size:14px;color:#8A7F81"><i class="bi bi-hand-index"></i>ปัดซ้าย–ขวาเพื่อดูผลงาน · แตะการ์ดเพื่อดูรายละเอียด</div>`;
   } else if (S.pfTab === 'kpi') {
     body = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:18px">
+  ${d.kpis.length ? '' : '<div style="grid-column:1/-1;padding:28px 20px;text-align:center;color:#8A7F81;font-size:13.5px">ยังไม่มีข้อมูลตัวชี้วัด</div>'}
   ${d.kpis.map(k => `
   <div style="background:#fff;border:1px solid #E6DEDC;${R};padding:26px;display:flex;flex-direction:column;gap:18px">
     <div style="display:flex;gap:18px;align-items:center">
