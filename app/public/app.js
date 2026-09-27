@@ -536,7 +536,6 @@ function pageSettings() {
     </div>
   </form>
   <div style="display:flex;flex-direction:column;gap:16px">
-    ${aiCheckCard()}
     <div style="${card};padding:20px">
       <div style="font-weight:600;font-size:15px;display:flex;gap:8px;align-items:center"><i class="bi bi-lightning-charge" style="color:#B8913A"></i>การประหยัด Token</div>
       <div style="font-size:13px;color:#3E3537;line-height:1.7;margin-top:10px">แปลงเสียงเป็นข้อความด้วย Web Speech API ของเบราว์เซอร์ (ไม่ส่งเสียงไปยัง AI) · โหมดสัมภาษณ์ใช้ชุดคำถามมาตรฐานในเครื่อง เรียก AI เฉพาะตอนเรียบเรียงสรุป · ส่งประวัติสนทนาไม่เกิน 10 ข้อความล่าสุด</div>
@@ -548,33 +547,10 @@ function pageSettings() {
   </div>
 </div>`;
 }
-function aiCheckCard() {
-  const c = S.aiCheck;
-  const body = !c ? '<div style="font-size:13px;color:#6B6264">กด “ตรวจสอบ” เพื่อดูว่าเซิร์ฟเวอร์มีสิ่งที่ต้องใช้เชื่อมต่อ AI ครบหรือไม่ (ไม่เสีย token)</div>'
-    : c.loading ? '<div style="font-size:13px;color:#6B6264">กำลังตรวจสอบ…</div>'
-    : c.error ? `<div style="font-size:13px;color:#C42838">${esc(c.error)}</div>`
-    : c.items.map(i => `<div style="display:flex;gap:8px;padding:6px 0;border-top:1px solid #F0E9E8;font-size:13px">
-        <i class="bi ${i.ok ? 'bi-check-circle-fill' : 'bi-x-circle-fill'}" style="color:${i.ok ? '#1E6B3A' : '#C42838'};margin-top:2px"></i>
-        <div style="min-width:0"><div style="font-weight:600">${esc(i.name)}</div><div class="mono" style="font-size:12px;color:#6B6264;word-break:break-all">${esc(i.detail)}</div>
-        ${i.fix ? `<div style="font-size:12px;color:#8A4B00;margin-top:2px">วิธีแก้: ${esc(i.fix)}</div>` : ''}</div></div>`).join('');
-  const sum = c && c.items ? `<span style="font-size:12px;font-weight:600;padding:2px 8px;border-radius:20px;background:${c.ok ? '#E3F1E7' : '#FBE4E6'};color:${c.ok ? '#1E6B3A' : '#C42838'}">${c.ok ? 'พร้อมใช้งาน' : 'ขาด ' + c.items.filter(i => !i.ok).length + ' รายการ'}</span>` : '';
-  return `<div style="${card};padding:20px">
-    <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap">
-      <div style="font-weight:600;font-size:15px;display:flex;gap:8px;align-items:center"><i class="bi bi-clipboard-check" style="color:#7B1E2B"></i>ความพร้อมในการเชื่อมต่อ ${sum}</div>
-      <button type="button" data-act="aiCheck" class="btn btn-outline" style="padding:5px 10px;font-size:12.5px"><i class="bi bi-arrow-repeat"></i>ตรวจสอบ</button>
-    </div>
-    <div style="margin-top:10px">${body}</div>
-  </div>`;
-}
-async function runAiCheck() {
-  if (S.aiCheck && S.aiCheck.loading) return;
-  set({ aiCheck: { loading: true } });
-  try { set({ aiCheck: await api('/api/ai/check') }); } catch (e) { set({ aiCheck: { error: e.message } }); }
-}
 async function loadAiSettings() {
   if (S._loadingAi) return;
   S._loadingAi = true;
-  try { const a = await api('/api/settings/ai'); S.aiForm = { ...a, apiKey: '' }; render(); if (!S.aiCheck) runAiCheck(); } catch (e) { toast(e.message); } finally { S._loadingAi = false; }
+  try { const a = await api('/api/settings/ai'); S.aiForm = { ...a, apiKey: '' }; render(); } catch (e) { toast(e.message); } finally { S._loadingAi = false; }
 }
 
 // ---------------- page: security scan (admin) ----------------
@@ -1369,7 +1345,6 @@ const A = {
   toggleChat: () => { localStore('hintSeen', '1'); set({ chatOpen: !S.chatOpen, hintSeen: true, _scrollChat: true }); if (S.chatOpen) focusChat(); },
   chatMode: el => { set({ mode: el.dataset.v, _scrollChat: true }); focusChat(); },
   aiCreateUsers: el => aiCreateUsers(+el.dataset.v),
-  aiCheck: () => runAiCheck(),
   secScan: () => runSecScan(),
   secTab: el => set({ secTab: el.dataset.v }),
   resetChat: () => set(S.mode === 'ask' ? { askMsgs: S.askMsgs.slice(0, 1) } : { ivStep: 0, ivAnswers: [], ivMsgs: [greet()], ivDone: false, draftSummary: '', ivKpis: {}, ivEvidence: [] }),
