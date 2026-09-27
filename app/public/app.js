@@ -83,6 +83,7 @@ const pad2 = n => String(n).padStart(2, '0');
 const stOf = s => ST[s] || ST['รอตรวจสอบ'];
 const withSt = w => { const c = stOf(w.status); return { ...w, stBg: c[0], stFg: c[1], stIcon: c[2], icon: TYPE_ICON[w.type] || 'bi bi-file-text' }; };
 const isAdmin = () => S.me && S.me.role === 'admin';
+const photoUrl = u => u && u.photoVer ? '/api/profile/photo?v=' + u.photoVer : '';
 // รอบการประเมิน/ปีงบประมาณที่ผู้ดูแลกำหนด (มาจาก /api/portfolio)
 // PER = รอบปัจจุบันของระบบ (ปีงบที่แสดงทั่วไป) · VPER = รอบที่กำลังดู KPI/สมรรถนะ (ผู้ดูแลเลือกได้)
 const PER = () => (S.data && S.data.current) || { fiscalYear: '', round: '', start: '', end: '' };
@@ -260,7 +261,7 @@ function viewAdmin(D) {
       <div class="hide-sm" style="font-size:13px;border:1px solid #E6DEDC;border-radius:8px;padding:7px 12px;display:flex;gap:6px;align-items:center;white-space:nowrap;flex-shrink:0"><i class="bi bi-calendar3" style="color:#7B1E2B"></i>ปีงบ ${esc(PER().fiscalYear)}</div>
       <span class="hide-sm" style="font-size:12px;padding:5px 10px;border-radius:6px;background:#F4F1EF;color:#7B1E2B;font-weight:600;white-space:nowrap">${isAdmin() ? 'ผู้ดูแลระบบ' : 'บุคลากร'}</span>
       <div style="display:flex;gap:6px;align-items:center;padding-left:8px;border-left:1px solid #E6DEDC">
-        <button data-act="modal" data-v="profile" title="${esc(u.name)} — แก้ไขข้อมูลส่วนตัว" style="width:36px;height:36px;border-radius:50%;background:#F6ECEC;color:#7B1E2B;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0">${esc(initials)}</button>
+        <button data-act="modal" data-v="profile" title="${esc(u.name)} — แก้ไขข้อมูลส่วนตัว" style="width:36px;height:36px;border-radius:50%;overflow:hidden;background:#F6ECEC;color:#7B1E2B;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0">${photoUrl(u) ? `<img src="${photoUrl(u)}" alt="" style="width:100%;height:100%;object-fit:cover">` : esc(initials)}</button>
         <button data-act="logout" class="icon-btn" title="ออกจากระบบ"><i class="bi bi-box-arrow-right" style="font-size:17px"></i></button>
       </div>
     </header>
@@ -679,6 +680,7 @@ function printSheet(D) {
   return `
 <div class="print-sheet">
   <div style="background:#4A0F18;color:#fff;border-radius:10px;padding:12px 16px;display:flex;gap:16px;align-items:center">
+    ${photoUrl(u) ? `<img src="${photoUrl(u)}" alt="" style="width:70px;height:92px;object-fit:cover;border-radius:6px;border:1.5px solid #D4AF5A;flex-shrink:0">` : ''}
     <div style="flex:1;min-width:0">
       <div style="font-size:8.5pt;color:#F1D9A0;letter-spacing:.5px">แฟ้มสะสมงาน (e‑Portfolio) · ปีงบประมาณ พ.ศ. ${esc(p.fiscalYear)}</div>
       <div style="font-family:'Noto Serif Thai',serif;font-size:17pt;font-weight:700;line-height:1.3;margin-top:2px">${esc(u.name)}</div>
@@ -850,7 +852,13 @@ function viewPortfolio(D) {
       <button data-act="print" title="พิมพ์ / PDF" class="h-dark no-print" style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:18px"><i class="bi bi-printer"></i></button>
     </div>
     <div class="hero-grid pf-pad" style="position:relative;max-width:1280px;margin:0 auto;padding:44px 32px 36px">
-      <div class="hero-photo" style="aspect-ratio:3/4;border-radius:22px;background:rgba(255,255,255,.06);border:1px solid rgba(212,175,90,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#D9B8BC;font-size:13px"><i class="bi bi-person" style="font-size:56px"></i>ภาพถ่ายบุคลากร</div>
+      <div class="hero-photo" style="position:relative;aspect-ratio:3/4;border-radius:22px;background:rgba(255,255,255,.06);border:1px solid rgba(212,175,90,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#D9B8BC;font-size:13px;overflow:hidden">
+        ${photoUrl(u) ? `<img src="${photoUrl(u)}" alt="ภาพถ่าย ${esc(u.name)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">` : '<i class="bi bi-person" style="font-size:56px"></i>ภาพถ่ายบุคลากร'}
+        <div class="no-print" style="position:absolute;left:8px;right:8px;bottom:8px;display:flex;gap:6px;justify-content:center">
+          <label title="อัปโหลดรูปถ่าย (JPG/PNG/WebP ไม่เกิน 5 MB)" style="cursor:pointer;background:rgba(26,6,10,.72);color:#F1D9A0;border:1px solid rgba(212,175,90,.6);border-radius:16px;padding:5px 12px;font-size:12px;display:flex;gap:6px;align-items:center">${S.photoBusy ? '<i class="bi bi-arrow-repeat" style="animation:spin 1s linear infinite"></i>' : '<i class="bi bi-camera"></i>'}${photoUrl(u) ? 'เปลี่ยนรูป' : 'เพิ่มรูป'}<input id="photoFile" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" style="display:none"></label>
+          ${photoUrl(u) ? '<button data-act="delPhoto" title="ลบรูป" style="background:rgba(26,6,10,.72);color:#F1D9A0;border:1px solid rgba(212,175,90,.6);border-radius:16px;padding:5px 10px;font-size:12px"><i class="bi bi-trash3"></i></button>' : ''}
+        </div>
+      </div>
       <div style="min-width:0">
         <div style="display:inline-flex;gap:8px;align-items:center;border:1px solid rgba(212,175,90,.5);color:#F1D9A0;border-radius:20px;padding:5px 14px;font-size:13px;letter-spacing:.5px"><i class="bi bi-journal-richtext"></i>e‑Portfolio · ปีงบประมาณ พ.ศ. ${esc(PER().fiscalYear)}</div>
         <h1 class="hero-name" style="font-family:'Noto Serif Thai',serif;font-size:52px;line-height:1.2;margin:16px 0 8px;font-weight:700;text-wrap:balance">${esc(u.name)}</h1>
@@ -1417,6 +1425,7 @@ const A = {
   goPortfolio: () => { showPortfolio(); window.scrollTo(0, 0); },
   goAdmin: () => { set({ view: 'admin' }); window.scrollTo(0, 0); },
   // รอฟอนต์โหลดครบก่อนวัดความสูง ไม่งั้นวัดจากฟอนต์สำรองแล้วล้นหน้า
+  delPhoto: () => { if (confirm('ลบรูปถ่าย?')) reloadAfter(api('/api/profile/photo', { method: 'DELETE' }), 'ลบรูปถ่ายแล้ว'); },
   print: () => (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => { fitPrintSheet(); window.print(); }),
   logout: async () => { clearChat(); try { await api('/api/logout', { method: 'POST' }); } catch (e) { /* ignore */ } location.reload(); },
   typeFilter: el => set({ typeFilter: el.dataset.v }),
@@ -1630,6 +1639,14 @@ document.addEventListener('change', e => {
   if (el.dataset && el.dataset.change === 'workPeriod') { S.workPeriod = el.value; reloadAfter(Promise.resolve()); return; }
   if (el.dataset && el.dataset.change === 'viewPeriod') { S.viewPeriod = +el.value; reloadAfter(Promise.resolve()); return; }
   if (el.dataset && el.dataset.change === 'kpiEditPeriod') { A.editKpi({ dataset: { id: S.kpiEdit.id, period: el.value } }); return; }
+  if (el.id === 'photoFile' && el.files[0]) {
+    const f = el.files[0];
+    if (f.size > 5 * 1024 * 1024) return toast('รูปใหญ่เกิน 5 MB');
+    const fd = new FormData(); fd.append('photo', f);
+    set({ photoBusy: true });
+    reloadAfter(api('/api/profile/photo', { method: 'POST', body: fd }), 'อัปโหลดรูปถ่ายแล้ว').then(() => set({ photoBusy: false }));
+    return;
+  }
   if (el.id === 'chatFile') { uploadChatFiles([...el.files]); return; }
   if (el.dataset && el.dataset.change === 'ivKpi') {
     const k = S.data.kpiOptions.find(x => x.id === +el.dataset.id);

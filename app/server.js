@@ -314,7 +314,7 @@ app.get('/api/portfolio', auth, wrap(async (req, res) => {
   const wAll = req.query.wperiod === 'all';
   const wp = wAll ? null : (parseInt(req.query.wperiod, 10) || curId);
   const [u, works, ev, kpis, comps, ai, period, current, periods, kpiOptions] = await Promise.all([
-    pool.query('SELECT id,username,name,position,level,group_name,supervisor,role,duties FROM users WHERE id=$1', [id]),
+    pool.query('SELECT id,username,name,position,level,group_name,supervisor,role,duties,substr(md5(photo),1,8) AS "photoVer" FROM users WHERE id=$1', [id]),
     pool.query(
       `SELECT w.*, (SELECT count(*)::int FROM evidence e WHERE e.work_id=w.id) AS ev,
               (SELECT COALESCE(json_agg(json_build_object('kpi_id', wk.kpi_id, 'value', wk.value::float)), '[]')
@@ -602,6 +602,40 @@ app.delete('/api/evidence/:id', auth, wrap(async (req, res) => {
   if (rows[0].file_name) fs.unlink(uploadPath(rows[0].file_name), () => {});
   audit(uid(req), 'evidence_delete', req.params.id);
   res.json({ ok: true });
+}));
+
+// ---------- รูปถ่ายบุคลากร (ของตัวเอง) ----------
+const photoUpload = multer({
+  storage: multer.diskStorage({
+    destination: UPLOAD_DIR,
+    filename: (req, file, cb) => cb(null, crypto.randomUUID() + path.extname(file.originalname).toLowerCase())
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /\.(jpe?g|png|webp)$/i.test(file.originalname);
+    cb(ok ? null : new Error('ไม่รองรับไฟล์ประเภทนี้ — ใช้ JPG, PNG หรือ WebP'), ok);
+  }
+});
+app.post('/api/profile/photo', auth, photoUpload.single('photo'), wrap(async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'กรุณาเลือกรูปภาพ' });
+  await verifyUploadedFiles([req.file]);
+  const { rows } = await pool.query('SELECT photo FROM users WHERE id=$1', [uid(req)]);
+  await pool.query('UPDATE users SET photo=$1 WHERE id=$2', [req.file.filename, uid(req)]);
+  if (rows[0] && rows[0].photo) fs.unlink(uploadPath(rows[0].photo), () => {});
+  audit(uid(req), 'photo_update');
+  res.json({ ok: true });
+}));
+app.delete('/api/profile/photo', auth, wrap(async (req, res) => {
+  const { rows } = await pool.query('UPDATE users u SET photo=NULL FROM (SELECT photo FROM users WHERE id=$1) old WHERE u.id=$1 RETURNING old.photo', [uid(req)]);
+  if (rows[0] && rows[0].photo) fs.unlink(uploadPath(rows[0].photo), () => {});
+  audit(uid(req), 'photo_delete');
+  res.json({ ok: true });
+}));
+app.get('/api/profile/photo', auth, wrap(async (req, res) => {
+  const { rows } = await pool.query('SELECT photo FROM users WHERE id=$1', [uid(req)]);
+  if (!rows[0] || !rows[0].photo) return res.status(404).json({ error: 'ยังไม่มีรูปภาพ' });
+  res.setHeader('Cache-Control', 'private, max-age=86400'); // URL มี ?v= เปลี่ยนเมื่อเปลี่ยนรูป
+  res.sendFile(uploadPath(rows[0].photo));
 }));
 
 app.get('/files/:id', auth, wrap(async (req, res) => {
@@ -1013,12 +1047,13 @@ app.put('/api/users/:id', admin, wrap(async (req, res) => {
 app.delete('/api/users/:id', admin, wrap(async (req, res) => {
   const id = +req.params.id;
   if (id === uid(req)) return res.status(400).json({ error: 'ไม่สามารถลบบัญชีของตัวเองได้' });
-  const { rows } = await pool.query('SELECT username,role FROM users WHERE id=$1', [id]);
+  const { rows } = await pool.query('SELECT username,role,photo FROM users WHERE id=$1', [id]);
   if (!rows[0]) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
   if (rows[0].role === 'admin' && !(await adminCount(id))) return res.status(400).json({ error: 'ต้องมีผู้ดูแลระบบอย่างน้อย 1 คน' });
   const { rows: files } = await pool.query('SELECT file_name FROM evidence WHERE user_id=$1 AND file_name IS NOT NULL', [id]);
   await pool.query('DELETE FROM users WHERE id=$1', [id]);
   for (const f of files) fs.unlink(uploadPath(f.file_name), () => {});
+  if (rows[0].photo) fs.unlink(uploadPath(rows[0].photo), () => {});
   await killSessions(id);
   audit(uid(req), 'user_delete', rows[0].username);
   res.json({ ok: true });
@@ -1047,7 +1082,8 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError || /ไม่รองรับไฟล์|เนื้อหาไม่ตรงกับนามสกุล/.test(err.message)) {
-    return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'ไฟล์ใหญ่เกิน 50 MB' : err.message });
+    const max = req.path === '/api/profile/photo' ? '5 MB' : '50 MB';
+    return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'ไฟล์ใหญ่เกิน ' + max : err.message });
   }
   console.error(err);
   res.status(500).json({ error: 'เกิดข้อผิดพลาดภายในระบบ' });
