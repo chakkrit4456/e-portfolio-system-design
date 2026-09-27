@@ -8,8 +8,8 @@ const QUESTIONS = [
   { k: 'เป้าหมายและระยะเวลา', q: 'งานนี้มีเป้าหมายอะไร เริ่มและครบกำหนดเมื่อใด', chips: ['ต.ค. 2568 – ก.ย. 2569'] },
   { k: 'บทบาทและการดำเนินงาน', q: 'ท่านมีบทบาทอย่างไร (ผู้รับผิดชอบหลัก/ร่วม) และดำเนินการอะไรบ้าง', chips: ['ผู้รับผิดชอบหลัก', 'ผู้รับผิดชอบร่วม', 'เลขานุการคณะทำงาน'] },
   { k: 'ผลผลิต/ผลลัพธ์', q: 'ผลผลิตหรือผลลัพธ์ที่ได้คืออะไร ถ้ามีตัวเลขช่วยระบุด้วยครับ', chips: [] },
-  { k: 'หลักฐาน', q: 'มีหลักฐานอะไรยืนยันบ้าง', chips: ['คำสั่ง', 'รายงานสรุปผล', 'รายชื่อผู้เข้าร่วม', 'ภาพกิจกรรม', 'URL ผลงาน'] },
-  { k: 'ตัวชี้วัดที่เกี่ยวข้อง', q: 'งานนี้เชื่อมกับ KPI ข้อใด', chips: ['KPI 1 การจัดอบรมตามแผน', 'KPI 2 ครูผ่านการพัฒนา', 'KPI 4 ความทันเวลา'] },
+  { k: 'หลักฐาน', q: 'มีหลักฐานอะไรยืนยันบ้าง กดปุ่ม 📎 เพื่อแนบไฟล์ หรือวางลิงก์ผลงานได้เลย', chips: ['คำสั่ง', 'รายงานสรุปผล', 'รายชื่อผู้เข้าร่วม', 'ภาพกิจกรรม', 'URL ผลงาน'] },
+  { k: 'ตัวชี้วัดที่เกี่ยวข้อง', q: 'งานนี้เชื่อมกับ KPI ข้อใด เลือกจากรายการด้านล่าง (ใส่ผลที่ได้ถ้ามี) แล้วกดส่ง', chips: [] },
   { k: 'ผู้ตรวจสอบ/ผู้รับรอง', q: 'สุดท้าย ใครเป็นผู้ตรวจสอบและผู้รับรองผลงานนี้', chips: ['ผู้อำนวยการกลุ่ม', 'ผู้อำนวยการสำนัก'] }
 ];
 const ACKS = ['รับทราบครับ', 'ขอบคุณครับ', 'ดีครับ', 'บันทึกไว้แล้วครับ'];
@@ -39,7 +39,7 @@ const S = {
   view: 'admin', page: 'dashboard', typeFilter: 'ทั้งหมด', search: '', sideOpen: false,
   chatOpen: false, mode: 'interview', chatInput: '', listening: false, loading: false,
   hintSeen: localStore('hintSeen') === '1',
-  ivStep: 0, ivAnswers: [], ivMsgs: [greet()], ivDone: false, draftSummary: '',
+  ivStep: 0, ivAnswers: [], ivMsgs: [greet()], ivDone: false, draftSummary: '', ivKpis: {}, ivEvidence: [],
   askMsgs: [{ role: 'bot', text: 'สอบถามเรื่องแฟ้มสะสมงาน KPI สมรรถนะ หรือให้ช่วยร่างข้อความได้เลยครับ' }],
   pfTab: 'overview', pfType: 'ทั้งหมด', pfDetail: null, pfEv: null,
   modal: null, pendingFiles: [], busy: false, formErr: '',
@@ -55,7 +55,7 @@ function localStore(k, v) {
 
 // บทสนทนากับผู้ช่วย AI เก็บใน sessionStorage (แยกตามผู้ใช้) ให้คงอยู่เมื่อเปลี่ยนหน้า/รีเฟรช
 // ลบเมื่อออกจากระบบหรือปิดแท็บ; ข้อความที่มีรหัสผ่าน (secret) ไม่ถูกเก็บ
-const CHAT_KEYS = ['askMsgs', 'ivMsgs', 'ivStep', 'ivAnswers', 'ivDone', 'draftSummary', 'mode', 'chatOpen'];
+const CHAT_KEYS = ['askMsgs', 'ivMsgs', 'ivStep', 'ivAnswers', 'ivDone', 'draftSummary', 'ivKpis', 'ivEvidence', 'mode', 'chatOpen'];
 const chatKey = () => S.me && 'bpcd_chat_' + S.me.id;
 function saveChat() {
   if (!chatKey() || !S._chatRestored) return;
@@ -845,7 +845,8 @@ function viewChat() {
 
   const iv = S.mode === 'interview';
   const msgs = iv ? S.ivMsgs : S.askMsgs;
-  const chips = iv && !S.ivDone ? (QUESTIONS[S.ivStep] || {}).chips || [] : !iv ? ['สรุปผลงานเด่นของฉัน', 'KPI ใดยังต่ำกว่าเป้า', 'แนะนำการพัฒนาตนเอง'] : [];
+  const kpiStep = iv && !S.ivDone && S.ivStep === KPI_Q;
+  const chips = kpiStep ? (S.data.kpis.length ? [] : ['ยังไม่มีตัวชี้วัดในระบบ']) : iv && !S.ivDone ? (QUESTIONS[S.ivStep] || {}).chips || [] : !iv ? ['สรุปผลงานเด่นของฉัน', 'KPI ใดยังต่ำกว่าเป้า', 'แนะนำการพัฒนาตนเอง'] : [];
   const tabs = [['interview', 'สัมภาษณ์', 'bi bi-mic'], ['ask', 'ถาม‑ตอบ', 'bi bi-chat-dots']];
   const dots = [0, 1, 2].map(i => `<span style="animation:blink 1.2s infinite;animation-delay:${i * 0.2}s;width:6px;height:6px;border-radius:50%;background:#8A7F81;display:inline-block"></span>`).join('');
   return hint + fab + `
@@ -873,6 +874,8 @@ function viewChat() {
     <div style="border:1px solid #E3D3B0;background:#FDFAF3;border-radius:12px;padding:14px;margin-top:4px">
       <div style="font-size:13px;font-weight:700;color:#4A0F18;display:flex;gap:6px;align-items:center"><i class="bi bi-file-earmark-text"></i>ร่างบันทึกผลงาน</div>
       <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">${QUESTIONS.map((q, i) => `<div style="font-size:12.5px;line-height:1.5"><span style="color:#8A7F81">${q.k}:</span> ${esc(S.ivAnswers[i] || '-')}</div>`).join('')}</div>
+      ${S.data.kpis.length ? `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #E3D3B0">${ivKpiPicker()}</div>` : ''}
+      ${S.ivEvidence.length ? `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #E3D3B0">${ivEvidenceList()}</div>` : ''}
       ${S.draftSummary ? `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #E3D3B0;font-size:13px;line-height:1.7;white-space:pre-wrap">${esc(S.draftSummary)}</div>` : ''}
       <div style="display:flex;gap:8px;margin-top:12px">
         <button data-act="polish" style="flex:1;text-align:center;border:1px solid #D9CCCB;background:#fff;padding:8px;border-radius:8px;font-size:12.5px;font-weight:600"><i class="bi bi-stars" style="color:#B8913A"></i> เรียบเรียงด้วย AI</button>
@@ -880,11 +883,14 @@ function viewChat() {
       </div>
     </div>` : ''}
   </div>
+  ${kpiStep && S.data.kpis.length ? `<div style="padding:8px 16px 0;max-height:190px;overflow:auto">${ivKpiPicker()}</div>` : ''}
+  ${iv && !S.ivDone && S.ivEvidence.length ? `<div style="padding:8px 16px 0;max-height:120px;overflow:auto">${ivEvidenceList()}</div>` : ''}
   ${chips.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 16px 0">${chips.map(c => `<button data-act="chip" data-v="${esc(c)}" class="h-outline" style="font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid #E6DEDC;color:#5A5052">${esc(c)}</button>`).join('')}</div>` : ''}
   <div style="padding:10px 12px 12px">
     ${S.listening ? '<div style="font-size:12px;color:#C42838;padding:0 6px 6px;display:flex;gap:6px;align-items:center"><i class="bi bi-record-circle"></i>กำลังฟัง… พูดภาษาไทยได้เลย</div>' : ''}
     <div style="display:flex;gap:8px;align-items:flex-end;border:1px solid #D9CCCB;border-radius:14px;padding:6px 6px 6px 12px;background:#fff">
       <textarea id="chatInput" data-bind="chatInput" rows="2" placeholder="${iv ? 'พิมพ์คำตอบ หรือกดไมค์เพื่อพูด…' : 'ถามผู้ช่วย AI…'}" style="flex:1;border:0;outline:0;resize:none;font-size:13.5px;line-height:1.5;padding:4px 0;background:transparent">${esc(S.chatInput)}</textarea>
+      ${iv ? `<label title="แนบไฟล์หลักฐาน" style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#F6ECEC;color:#7B1E2B;cursor:pointer">${S.uploading ? '<i class="bi bi-arrow-repeat" style="animation:spin 1s linear infinite"></i>' : '<i class="bi bi-paperclip"></i>'}<input id="chatFile" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.gif,.webp,.mp4,.mov" style="display:none"></label>` : ''}
       <button data-act="mic" title="พูดเพื่อพิมพ์ (ใช้เบราว์เซอร์)" style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:${S.listening ? '#C42838' : '#F6ECEC'};color:${S.listening ? '#fff' : '#7B1E2B'};animation:${S.listening ? 'micPulse 1.4s infinite' : 'none'}"><i class="bi bi-mic-fill"></i></button>
       <button data-act="send" title="ส่ง" class="h-primary" style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#7B1E2B;color:#fff"><i class="bi bi-send-fill"></i></button>
     </div>
@@ -1137,10 +1143,49 @@ async function aiCreateUsers(i) {
 }
 
 // ---------------- chat logic ----------------
+// ---------------- interview: KPI จริง + แนบหลักฐาน ----------------
+const KPI_Q = QUESTIONS.findIndex(q => q.k === 'ตัวชี้วัดที่เกี่ยวข้อง');
+const EV_Q = QUESTIONS.findIndex(q => q.k === 'หลักฐาน');
+// S.ivKpis = { [kpiId]: ค่าที่ผลงานนี้ทำได้ } — ใช้ค่าเดียวกับฟอร์มผลงาน (kpi_links)
+function ivKpiPicker() {
+  return `<div style="font-size:12px;color:#6B6264;margin-bottom:6px">เลือกตัวชี้วัดที่งานนี้สนับสนุน</div>
+  <div style="display:flex;flex-direction:column;gap:6px">${S.data.kpis.map(k => { const on = k.id in S.ivKpis; return `
+    <div style="display:flex;gap:8px;align-items:center;font-size:12.5px;flex-wrap:wrap">
+      <label style="display:flex;gap:7px;align-items:flex-start;flex:1;min-width:160px;cursor:pointer"><input type="checkbox" data-change="ivKpi" data-id="${k.id}" ${on ? 'checked' : ''} style="margin-top:2px"><span>${esc(k.name)}${k.auto ? ' <span style="font-size:10.5px;color:#1E6B3A;background:#E6F2EA;padding:0 6px;border-radius:10px">นับอัตโนมัติ</span>' : ''}</span></label>
+      ${k.auto && on ? `<label style="display:flex;gap:5px;align-items:center;color:#6B6264">ได้<input type="number" min="0" step="any" data-change="ivKpiVal" data-id="${k.id}" value="${esc(S.ivKpis[k.id])}" style="width:74px;padding:3px 6px;border:1px solid #E6DEDC;border-radius:6px">${esc(k.unit || '')}</label>` : ''}
+    </div>`; }).join('')}</div>`;
+}
+const ivKpiNames = () => S.data.kpis.filter(k => k.id in S.ivKpis).map(k => k.name);
+function ivEvidenceList() {
+  return `<div style="font-size:12px;color:#6B6264;margin-bottom:4px"><i class="bi bi-paperclip"></i> หลักฐานที่แนบ (จะเชื่อมกับผลงานเมื่อบันทึก)</div>
+  ${S.ivEvidence.map((e, i) => `<div style="display:flex;gap:6px;align-items:center;font-size:12.5px"><i class="bi bi-file-earmark-check" style="color:#1E6B3A"></i><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.name)}</span><button data-act="rmIvEv" data-v="${i}" title="ลบไฟล์นี้" style="color:#8A7F81"><i class="bi bi-x"></i></button></div>`).join('')}`;
+}
+// อัปโหลดทันทีเป็นหลักฐานที่ยังไม่เชื่อมผลงาน (อยู่รอดแม้รีเฟรชหน้า) แล้วเชื่อมกับผลงานตอนบันทึกร่าง
+async function uploadChatFiles(files) {
+  if (!files.length || S.uploading) return;
+  const out = new FormData();
+  files.forEach(f => out.append('files', f));
+  set({ uploading: true });
+  try {
+    const r = await api('/api/evidence', { method: 'POST', body: out });
+    r.ids.forEach((id, i) => S.ivEvidence.push({ id, name: files[i].name }));
+    pushMsg('ivMsgs', { role: 'bot', text: 'แนบหลักฐานแล้ว ' + r.ids.length + ' ไฟล์: ' + files.map(f => f.name).join(', ') + (S.ivStep === EV_Q && !S.ivDone ? '\nพิมพ์คำอธิบายเพิ่มเติม หรือกดส่งเพื่อไปข้อถัดไปได้เลยครับ' : '') });
+    await loadData();
+  } catch (e) {
+    pushMsg('ivMsgs', { role: 'bot', text: 'แนบไฟล์ไม่สำเร็จ: ' + e.message });
+  }
+  set({ uploading: false });
+}
+
 function pushMsg(key, msg) { S[key] = [...S[key], msg]; S._scrollChat = true; }
 
 async function send() {
-  const text = S.chatInput.trim();
+  let text = S.chatInput.trim();
+  // ข้อ KPI/หลักฐาน: ถ้าไม่พิมพ์แต่เลือก KPI หรือแนบไฟล์แล้ว ใช้สิ่งที่เลือกเป็นคำตอบ
+  if (!text && S.mode === 'interview' && !S.ivDone) {
+    if (S.ivStep === KPI_Q) text = ivKpiNames().join(', ');
+    else if (S.ivStep === EV_Q) text = S.ivEvidence.map(e => e.name).join(', ');
+  }
   if (!text || S.loading) return;
   if (S.rec && S.listening) S.rec.stop();
   S.chatInput = '';
@@ -1197,10 +1242,26 @@ async function saveDraft() {
   const summary = S.draftSummary || ['บทบาทและการดำเนินงาน: ' + (a[3] || '-'), 'หลักฐาน: ' + (a[5] || '-'), 'ผู้ตรวจสอบ/ผู้รับรอง: ' + (a[7] || '-')].join('\n');
   S.busy = true;
   try {
-    const w = await api('/api/works', { method: 'POST', body: { title: a[0] || 'ผลงานใหม่', type: t, ref: a[1], period: a[2], result: a[4], kpi: a[6], summary } });
+    const body = { title: a[0] || 'ผลงานใหม่', type: t, ref: a[1], period: a[2], result: a[4], kpi: a[KPI_Q], summary };
+    const own = new Set(S.data.kpis.map(k => k.id));
+    const links = Object.entries(S.ivKpis).filter(([id]) => own.has(+id)).map(([id, value]) => ({ kpi_id: +id, value }));
+    if (S.data.kpis.length) body.kpi_links = links;
+    const w = await api('/api/works', { method: 'POST', body });
+    // หลักฐานที่แนบในแชท + ลิงก์ที่พิมพ์ในคำตอบข้อหลักฐาน -> เชื่อมกับผลงานนี้
+    let evCount = 0;
+    for (const e of S.ivEvidence) {
+      try { await api('/api/evidence/' + e.id, { method: 'PUT', body: { work_id: w.id } }); evCount++; } catch (err) { /* ถูกลบไปแล้ว */ }
+    }
+    for (const url of [...new Set((a[EV_Q] || '').match(/https?:\/\/[^\s,]+/g) || [])]) {
+      const fd = new FormData();
+      fd.append('work_id', w.id); fd.append('url', url);
+      try { await api('/api/evidence', { method: 'POST', body: fd }); evCount++; } catch (err) { /* ลิงก์ไม่ถูกต้อง — ข้าม */ }
+    }
     await loadData();
-    pushMsg('ivMsgs', { role: 'bot', text: 'บันทึก “' + w.title + '” เข้าแฟ้มแล้ว สถานะ: รอตรวจสอบ จากผู้บังคับบัญชา\nแนบไฟล์หลักฐานได้ที่เมนู “หลักฐาน” หรือกดไอคอน 📎 ในตารางผลงาน' });
-    Object.assign(S, { ivDone: false, ivStep: 0, ivAnswers: [], draftSummary: '', view: 'admin', page: 'works', typeFilter: 'ทั้งหมด' });
+    const kpiMsg = links.length ? '\nเชื่อมกับตัวชี้วัด: ' + ivKpiNames().join(', ') : '';
+    const evMsg = evCount ? '\nแนบหลักฐาน ' + evCount + ' รายการ' : '\nแนบไฟล์หลักฐานเพิ่มได้ที่เมนู “หลักฐาน” หรือกดไอคอน 📎 ในตารางผลงาน';
+    pushMsg('ivMsgs', { role: 'bot', text: 'บันทึก “' + w.title + '” เข้าแฟ้มแล้ว สถานะ: รอตรวจสอบ จากผู้บังคับบัญชา' + kpiMsg + evMsg });
+    Object.assign(S, { ivDone: false, ivStep: 0, ivAnswers: [], draftSummary: '', ivKpis: {}, ivEvidence: [], view: 'admin', page: 'works', typeFilter: 'ทั้งหมด' });
     render();
     setTimeout(() => { pushMsg('ivMsgs', { role: 'bot', text: 'ต้องการบันทึกผลงานถัดไปไหมครับ\n\n1/8 ' + QUESTIONS[0].q }); render(); }, 600);
   } catch (e) {
@@ -1248,7 +1309,12 @@ const A = {
   aiCheck: () => runAiCheck(),
   secScan: () => runSecScan(),
   secTab: el => set({ secTab: el.dataset.v }),
-  resetChat: () => set(S.mode === 'ask' ? { askMsgs: S.askMsgs.slice(0, 1) } : { ivStep: 0, ivAnswers: [], ivMsgs: [greet()], ivDone: false, draftSummary: '' }),
+  resetChat: () => set(S.mode === 'ask' ? { askMsgs: S.askMsgs.slice(0, 1) } : { ivStep: 0, ivAnswers: [], ivMsgs: [greet()], ivDone: false, draftSummary: '', ivKpis: {}, ivEvidence: [] }),
+  rmIvEv: async el => {
+    const [e] = S.ivEvidence.splice(+el.dataset.v, 1);
+    render();
+    if (e) await reloadAfter(api('/api/evidence/' + e.id, { method: 'DELETE' }), 'ลบไฟล์ ' + e.name + ' แล้ว');
+  },
   chip: el => { S.chatInput = (S.chatInput ? S.chatInput + ' ' : '') + el.dataset.v; render(); focusChat(); },
   send, polish, saveDraft, mic: toggleMic,
   pfTab: el => set({ pfTab: el.dataset.v }),
@@ -1422,6 +1488,14 @@ document.addEventListener('change', e => {
   const el = e.target;
   if (el.dataset && /^kpis\.\d+\.auto$/.test(el.dataset.k || '')) { syncKpiEdit(); render(); return; }
   if (el.id === 'fileInput') { S.pendingFiles.push(...el.files); render(); return; }
+  if (el.id === 'chatFile') { uploadChatFiles([...el.files]); return; }
+  if (el.dataset && el.dataset.change === 'ivKpi') {
+    const k = S.data.kpis.find(x => x.id === +el.dataset.id);
+    if (el.checked) S.ivKpis[k.id] = 1; else delete S.ivKpis[k.id];
+    if (S.ivDone) S.ivAnswers[KPI_Q] = ivKpiNames().join(', ') || '-';
+    render(); return;
+  }
+  if (el.dataset && el.dataset.change === 'ivKpiVal') { S.ivKpis[el.dataset.id] = el.value; saveChat(); return; }
   if (el.dataset && el.dataset.change === 'evWork') {
     const ev = S.data.evidence.find(x => x.id === +el.dataset.id);
     reloadAfter(api('/api/evidence/' + ev.id, { method: 'PUT', body: { work_id: el.value || null } }), 'เชื่อมโยงหลักฐานแล้ว');
