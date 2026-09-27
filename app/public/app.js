@@ -145,7 +145,8 @@ function toast(msg) {
 }
 
 async function loadData() {
-  const d = await api('/api/portfolio' + (S.viewPeriod ? '?period=' + S.viewPeriod : ''));
+  const q = [S.viewPeriod && 'period=' + S.viewPeriod, S.workPeriod && 'wperiod=' + S.workPeriod].filter(Boolean).join('&');
+  const d = await api('/api/portfolio' + (q ? '?' + q : ''));
   S.data = d;
   S.me = d.user;
   restoreChat();
@@ -352,7 +353,7 @@ function pageWorks(D) {
   const cols = 'grid-template-columns:48px minmax(0,3fr) 120px minmax(0,1.4fr) 80px 130px 70px';
   return `
 ${pageHead('ผลงานและโครงการ', 'งานประจำ งานนโยบาย งานโครงการ และงานมอบหมายพิเศษ ปีงบประมาณ ' + esc(PER().fiscalYear), `
-  <button data-act="modal" data-v="work" class="btn btn-outline"><i class="bi bi-pencil-square"></i>เพิ่มผลงานเอง</button>`)}
+  ${workPeriodSelect()}<button data-act="modal" data-v="work" class="btn btn-outline"><i class="bi bi-pencil-square"></i>เพิ่มผลงานเอง</button>`)}
 <div style="display:flex;gap:8px;flex-wrap:wrap">${chipRow(['ทั้งหมด', ...TYPES], S.typeFilter, 'typeFilter')}</div>
 <div style="${card};overflow:hidden" class="table-wrap">
   <div class="table-min">
@@ -362,7 +363,7 @@ ${pageHead('ผลงานและโครงการ', 'งานประ�
     ${list.map((w, i) => `
     <div class="h-row" style="display:grid;${cols};gap:12px;padding:14px 20px;border-bottom:1px solid #F3EEEC;align-items:center;font-size:13.5px">
       <div style="color:#8A7F81">${i + 1}</div>
-      <div><div style="font-weight:600;line-height:1.45">${esc(w.title)}</div><div style="font-size:12px;color:#8A7F81;margin-top:3px">${esc(w.ref || '-')} · ${esc(w.period || '-')}</div></div>
+      <div><div style="font-weight:600;line-height:1.45">${esc(w.title)}</div><div style="font-size:12px;color:#8A7F81;margin-top:3px">${esc(w.ref || '-')} · ${esc(w.period || '-')} ${periodTag(w.period_id)}</div></div>
       <div><span style="font-size:12px;padding:2px 8px;border-radius:6px;background:#F4F1EF;color:#5A5052">${esc(w.type)}</span></div>
       <div style="color:#3E3537;line-height:1.45">${esc(w.result || '-')}</div>
       <div><button data-act="uploadFor" data-id="${w.id}" title="แนบหลักฐาน" style="display:flex;gap:6px;align-items:center;color:#5A5052;padding:4px 6px;border-radius:6px" class="h-light"><i class="bi bi-paperclip"></i>${w.ev}</button></div>
@@ -381,7 +382,7 @@ function pageEvidence(D) {
   const wt = id => (S.data.works.find(w => w.id === id) || {}).title;
   const list = S.data.evidence.filter(e => !q || (e.name + (wt(e.work_id) || '')).includes(q));
   return `
-${pageHead('หลักฐานการปฏิบัติงาน', 'คำสั่ง รายงาน รายชื่อ ภาพ วิดีโอ URL ผลงานดิจิทัล และสถิติ')}
+${pageHead('หลักฐานการปฏิบัติงาน', 'คำสั่ง รายงาน รายชื่อ ภาพ วิดีโอ URL ผลงานดิจิทัล และสถิติ', workPeriodSelect())}
 <div data-drop="1" style="border:2px dashed #D9CCCB;border-radius:12px;background:#FCFAF9;padding:26px;display:flex;gap:18px;align-items:center;flex-wrap:wrap">
   <div style="width:52px;height:52px;border-radius:12px;background:#F6ECEC;color:#7B1E2B;display:flex;align-items:center;justify-content:center;font-size:22px"><i class="bi bi-cloud-arrow-up"></i></div>
   <div style="flex:1;min-width:220px"><div style="font-weight:600;font-size:15px">ลากไฟล์หลักฐานมาวางที่นี่</div><div style="font-size:13px;color:#6B6264;margin-top:2px">PDF, DOCX, XLSX, JPG, PNG, MP4 (ไม่เกิน 50 MB) หรือวางลิงก์ Google Drive / OneDrive แล้วเลือกผลงานที่เชื่อมโยง</div></div>
@@ -392,7 +393,7 @@ ${pageHead('หลักฐานการปฏิบัติงาน', 'ค�
   <div style="${card};padding:16px;display:flex;flex-direction:column;gap:10px">
     <div style="display:flex;gap:12px;align-items:flex-start">
       <div style="width:40px;height:40px;border-radius:8px;background:#F6ECEC;color:#7B1E2B;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0"><i class="${EV_ICON[e.kind] || 'bi bi-file-earmark'}"></i></div>
-      <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;line-height:1.4;word-break:break-word">${href ? `<a href="${esc(href)}" target="_blank" rel="noopener" style="color:inherit">${esc(e.name)}</a>` : esc(e.name)}</div><div style="font-size:12px;color:#8A7F81;margin-top:3px">${esc(e.kind)} · ${esc(e.ev_date || '-')}${href ? '' : ' · ไม่มีไฟล์แนบ'}</div></div>
+      <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;line-height:1.4;word-break:break-word">${href ? `<a href="${esc(href)}" target="_blank" rel="noopener" style="color:inherit">${esc(e.name)}</a>` : esc(e.name)}</div><div style="font-size:12px;color:#8A7F81;margin-top:3px">${esc(e.kind)} · ${esc(e.ev_date || '-')}${href ? '' : ' · ไม่มีไฟล์แนบ'} ${periodTag(e.period_id)}</div></div>
       <button class="icon-btn" data-act="delEv" data-id="${e.id}" title="ลบ"><i class="bi bi-trash3"></i></button>
     </div>
     <label style="font-size:12.5px;color:#5A5052;background:#FAF7F6;border-radius:6px;padding:4px 8px;display:flex;gap:6px;align-items:center"><i class="bi bi-link-45deg"></i>
@@ -418,6 +419,17 @@ function periodSelect(act = 'viewPeriod', cur = VPER().id) {
   const curId = PER().id;
   return `<label style="display:flex;gap:8px;align-items:center;font-size:13px;color:#5A5052"><i class="bi bi-calendar3"></i><select data-change="${act}" style="padding:7px 10px;border:1px solid #D9CCCB;border-radius:8px;font-size:13px;background:#fff">${L.map(p => `<option value="${p.id}" ${p.id === cur ? 'selected' : ''}>${esc(p.round + ' · ปีงบ ' + p.fiscalYear + (p.id === curId ? ' (ปัจจุบัน)' : ''))}</option>`).join('')}</select></label>`;
 }
+// ผลงาน/หลักฐาน: เลือกรอบ หรือ "ทุกรอบ" (ทุกคนเลือกได้ — เป็นข้อมูลของตัวเอง)
+function workPeriodSelect() {
+  const L = S.data.periods || [];
+  if (L.length < 2) return '';
+  const cur = S.data.workPeriod, curId = PER().id;
+  return `<label style="display:flex;gap:8px;align-items:center;font-size:13px;color:#5A5052"><i class="bi bi-calendar3"></i><select data-change="workPeriod" style="padding:7px 10px;border:1px solid #D9CCCB;border-radius:8px;font-size:13px;background:#fff">
+    <option value="all" ${cur === 'all' ? 'selected' : ''}>ทุกรอบการประเมิน</option>
+    ${L.map(p => `<option value="${p.id}" ${p.id === cur ? 'selected' : ''}>${esc(p.round + ' · ปีงบ ' + p.fiscalYear + (p.id === curId ? ' (ปัจจุบัน)' : ''))}</option>`).join('')}</select></label>`;
+}
+const periodName = id => { const p = (S.data.periods || []).find(x => x.id === id); return p ? p.round + ' · ปีงบ ' + p.fiscalYear : ''; };
+const periodTag = id => S.data.workPeriod === 'all' && periodName(id) ? `<span style="font-size:11px;color:#7B1E2B;background:#F6ECEC;padding:1px 7px;border-radius:10px;white-space:nowrap">${esc(periodName(id))}</span>` : '';
 function pageKpi(D) {
   const d = S.data;
   const cols = 'grid-template-columns:minmax(0,2.6fr) 70px 90px 90px minmax(0,1.4fr) 70px';
@@ -1393,7 +1405,7 @@ const A = {
     document.getElementById('perEnd').value = (ce + +el.dataset.ye) + '-' + el.dataset.me;
   },
   perEdit: el => set({ perEdit: +el.dataset.id || null }),
-  perCurrent: el => reloadAfter(api('/api/periods/' + el.dataset.id + '/current', { method: 'POST' }).then(() => { S.periodsAdmin = null; S.viewPeriod = null; }), 'ตั้งรอบปัจจุบันแล้ว'),
+  perCurrent: el => reloadAfter(api('/api/periods/' + el.dataset.id + '/current', { method: 'POST' }).then(() => { S.periodsAdmin = null; S.viewPeriod = null; S.workPeriod = null; }), 'ตั้งรอบปัจจุบันแล้ว'),
   perDel: el => {
     const p = S.periodsAdmin.periods.find(x => x.id === +el.dataset.id);
     if (!confirm('ลบรอบ "' + p.round + ' ปีงบ ' + p.fiscalYear + '"?')) return;
@@ -1466,7 +1478,7 @@ const FORMS = {
     const b = Object.fromEntries(fd.entries());
     b.makeCurrent = !!b.makeCurrent;
     if (S.perEdit) await api('/api/periods/' + S.perEdit, { method: 'PUT', body: b });
-    else { await api('/api/periods', { method: 'POST', body: b }); if (b.makeCurrent) S.viewPeriod = null; }
+    else { await api('/api/periods', { method: 'POST', body: b }); if (b.makeCurrent) S.viewPeriod = S.workPeriod = null; }
     const msg = S.perEdit ? 'บันทึกการแก้ไขรอบแล้ว' : 'เพิ่มรอบการประเมินแล้ว';
     Object.assign(S, { periodsAdmin: null, perEdit: null });
     return msg;
@@ -1561,6 +1573,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const el = e.target;
   if (el.id === 'fileInput') { S.pendingFiles.push(...el.files); render(); return; }
+  if (el.dataset && el.dataset.change === 'workPeriod') { S.workPeriod = el.value; reloadAfter(Promise.resolve()); return; }
   if (el.dataset && el.dataset.change === 'viewPeriod') { S.viewPeriod = +el.value; reloadAfter(Promise.resolve()); return; }
   if (el.dataset && el.dataset.change === 'kpiEditPeriod') { A.editKpi({ dataset: { id: S.kpiEdit.id, period: el.value } }); return; }
   if (el.id === 'chatFile') { uploadChatFiles([...el.files]); return; }

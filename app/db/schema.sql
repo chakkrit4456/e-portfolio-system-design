@@ -113,3 +113,9 @@ ALTER TABLE kpis ADD COLUMN IF NOT EXISTS period_id INT REFERENCES periods(id);
 ALTER TABLE competencies ADD COLUMN IF NOT EXISTS period_id INT REFERENCES periods(id);
 CREATE INDEX IF NOT EXISTS kpis_period_idx ON kpis(user_id, period_id);
 CREATE INDEX IF NOT EXISTS competencies_period_idx ON competencies(user_id, period_id);
+
+-- ผลงาน/หลักฐานแยกตามรอบ (หลักฐานอยู่รอบเดียวกับผลงานที่เชื่อม) — ค่าว่างถูกเติมตอนเริ่มระบบ (ensurePeriods)
+ALTER TABLE works ADD COLUMN IF NOT EXISTS period_id INT REFERENCES periods(id);
+ALTER TABLE evidence ADD COLUMN IF NOT EXISTS period_id INT REFERENCES periods(id);
+CREATE INDEX IF NOT EXISTS works_period_idx ON works(user_id, period_id);
+CREATE INDEX IF NOT EXISTS evidence_period_idx ON evidence(user_id, period_id);
