@@ -30,7 +30,7 @@ const TYPES = ['โครงการ', 'งานประจำ', 'วิช�
 const WORK_STATUSES = ['รอตรวจสอบ', 'กำลังดำเนินการ', 'รอหลักฐาน', 'รับรองแล้ว'];
 const TYPE_ICON = { 'โครงการ': 'bi bi-kanban', 'งานประจำ': 'bi bi-briefcase', 'วิชาการ': 'bi bi-mortarboard', 'ยุทธศาสตร์': 'bi bi-bullseye', 'บริการ': 'bi bi-headset', 'เร่งด่วน': 'bi bi-lightning' };
 const EV_ICON = { PDF: 'bi bi-file-earmark-pdf', DOCX: 'bi bi-file-earmark-word', XLSX: 'bi bi-file-earmark-spreadsheet', 'ภาพ': 'bi bi-images', URL: 'bi bi-link-45deg', 'วิดีโอ': 'bi bi-camera-video' };
-const PAGE_TITLES = { dashboard: 'แดชบอร์ด', works: 'ผลงานและโครงการ', evidence: 'หลักฐาน', kpi: 'KPI และสมรรถนะ', settings: 'ตั้งค่าผู้ช่วย AI', users: 'จัดการผู้ใช้' };
+const PAGE_TITLES = { dashboard: 'แดชบอร์ด', works: 'ผลงานและโครงการ', evidence: 'หลักฐาน', kpi: 'KPI และสมรรถนะ', settings: 'ตั้งค่าผู้ช่วย AI', users: 'จัดการผู้ใช้', security: 'ความปลอดภัย' };
 
 // ---------------- state ----------------
 const greet = () => ({ role: 'bot', text: 'สวัสดีครับ ผมจะช่วยสัมภาษณ์เพื่อบันทึกผลงานเข้าแฟ้ม 8 คำถามสั้น ๆ ตอบด้วยการพิมพ์หรือกดไมค์พูดได้เลย\n\n1/8 ' + QUESTIONS[0].q });
@@ -206,14 +206,14 @@ function viewLogin() {
 function viewAdmin(D) {
   const pending = S.data.evidence.filter(e => e.status === 'รอตรวจสอบ').length;
   const nav = [['dashboard', 'แดชบอร์ด', 'bi bi-speedometer2'], ['works', 'ผลงานและโครงการ', 'bi bi-kanban', D.n], ['evidence', 'หลักฐาน', 'bi bi-folder2-open', pending], ['kpi', 'KPI และสมรรถนะ', 'bi bi-graph-up-arrow']];
-  if (isAdmin()) nav.push(['settings', 'ตั้งค่าผู้ช่วย AI', 'bi bi-cpu'], ['users', 'จัดการผู้ใช้', 'bi bi-people']);
+  if (isAdmin()) nav.push(['settings', 'ตั้งค่าผู้ช่วย AI', 'bi bi-cpu'], ['users', 'จัดการผู้ใช้', 'bi bi-people'], ['security', 'ความปลอดภัย', 'bi bi-shield-check']);
   const ai = S.data.ai;
   const P = PROVIDERS[ai.provider] || PROVIDERS.custom;
   const aiText = ai.ready ? 'เชื่อมต่อ ' + P.label + ' · ' + ai.model : isAdmin() ? 'ยังไม่เชื่อมต่อ API — ตั้งค่าได้ที่เมนู “ตั้งค่าผู้ช่วย AI”' : 'ผู้ดูแลระบบยังไม่เปิดการเชื่อมต่อ · โหมดสัมภาษณ์ใช้งานได้ทันที';
   const u = S.data.user;
   // "นางสาวพิมพ์ชนก วงศ์ประเสริฐ" -> "พว" (first letter of first name + surname)
   const initials = (u.name || '').replace(/^(นางสาว|นาง|นาย|ดร\.)\s*/, '').split(/\s+/).slice(0, 2).map(p => p[0] || '').join('');
-  const page = { dashboard: pageDashboard, works: pageWorks, evidence: pageEvidence, kpi: pageKpi, settings: pageSettings, users: pageUsers }[S.page] || pageDashboard;
+  const page = { dashboard: pageDashboard, works: pageWorks, evidence: pageEvidence, kpi: pageKpi, settings: pageSettings, users: pageUsers, security: pageSecurity }[S.page] || pageDashboard;
   return `
 <div class="layout">
   ${S.sideOpen ? '<div data-act="side" style="position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:39"></div>' : ''}
@@ -506,21 +506,111 @@ async function loadAiSettings() {
   try { const a = await api('/api/settings/ai'); S.aiForm = { ...a, apiKey: '' }; render(); if (!S.aiCheck) runAiCheck(); } catch (e) { toast(e.message); } finally { S._loadingAi = false; }
 }
 
+// ---------------- page: security scan (admin) ----------------
+const SEV_ORDER = ['critical', 'high', 'medium', 'low', 'info'];
+const SEV_STYLE = { critical: ['#5B0A14', '#fff', 'วิกฤต'], high: ['#FBE4E6', '#C42838', 'สูง'], medium: ['#FFF4DB', '#8A5A00', 'กลาง'], low: ['#E8EEF8', '#2B4C8C', 'ต่ำ'], info: ['#F4F1EF', '#6B6264', 'ข้อมูล'] };
+const sevPill = s => { const c = SEV_STYLE[s] || SEV_STYLE.info; return `<span style="font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:20px;background:${c[0]};color:${c[1]};white-space:nowrap">${c[2]}</span>`; };
+const SEC_SOURCES = [['snyk', 'Snyk', 'bi bi-bug', 'เครื่องมือสแกนอัตโนมัติ (SCA + SAST)'], ['deepseek', 'DeepSeek', 'bi bi-robot', 'LLM ตรวจโค้ดแบบ manual'], ['claude', 'Claude', 'bi bi-stars', 'รีวิวโค้ดแบบ manual (บันทึกไว้)']];
+const thTime = iso => iso ? new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
+
+function pageSecurity() {
+  if (!isAdmin()) return '';
+  const s = S.sec;
+  if (!s) { loadSec(); return `<div style="${card}">${emptyRow('กำลังโหลด…')}</div>`; }
+  const r = s.result;
+  const btn = `<button data-act="secScan" class="btn btn-primary" ${s.running ? 'disabled' : ''}><i class="bi ${s.running ? 'bi-hourglass-split' : 'bi-arrow-repeat'}"></i>${s.running ? 'กำลังสแกน… (อาจใช้หลายนาที)' : 'Scan ใหม่'}</button>`;
+  const head = pageHead('ความปลอดภัย', r ? 'สแกนล่าสุด ' + esc(thTime(r.finishedAt)) + ' · เปรียบเทียบผลจาก Snyk, DeepSeek และ Claude' : 'ยังไม่เคยสแกน — กด “Scan ใหม่” เพื่อเริ่ม', btn);
+  if (!r) return head;
+
+  const tiles = SEC_SOURCES.map(([k, label, icon, sub]) => {
+    const src = r[k] || { findings: [] };
+    const bySev = SEV_ORDER.map(v => [v, src.findings.filter(f => f.severity === v).length]).filter(x => x[1]);
+    const m = src.meta || {};
+    const metaText = k === 'snyk' ? (m.dependencies ? 'ตรวจ ' + m.dependencies + ' dependencies' : '') + (m.org ? ' · org ' + m.org : '')
+      : k === 'deepseek' ? (m.model || '') + (m.tokens ? ' · ' + m.tokens.toLocaleString() + ' tokens' : '')
+      : (m.model || '') + (m.reviewedAt ? ' · รีวิวเมื่อ ' + m.reviewedAt + ' (ไม่รันซ้ำตอนกดสแกน)' : '');
+    return `<div style="${card};padding:18px;display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;gap:8px;align-items:center"><i class="${icon}" style="font-size:18px;color:#7B1E2B"></i><b style="font-size:15px">${label}</b><span style="font-size:12px;color:#8A7F81">${sub}</span></div>
+      <div style="font-size:30px;font-weight:700">${src.findings.length}<span style="font-size:13px;font-weight:400;color:#6B6264"> รายการ</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${bySev.map(([v, n]) => sevPill(v).replace('</span>', ' ' + n + '</span>')).join('') || '<span style="font-size:12.5px;color:#1E6B3A">ไม่พบปัญหา</span>'}</div>
+      ${src.error ? `<div style="font-size:12.5px;color:#C42838;word-break:break-word"><i class="bi bi-exclamation-triangle"></i> ${esc(src.error)}</div>` : ''}
+      <div style="font-size:12px;color:#8A7F81">${esc(metaText)}</div>
+    </div>`;
+  }).join('');
+
+  // ตารางเปรียบเทียบ: หมวดปัญหา × แหล่งที่ตรวจพบ
+  const cats = Object.keys(s.categories).filter(c => SEC_SOURCES.some(([k]) => r[k] && r[k].findings.some(f => f.category === c)));
+  const cell = (k, c) => {
+    const fs = (r[k] ? r[k].findings : []).filter(f => f.category === c);
+    if (!fs.length) return '<span style="color:#C9BFC0">—</span>';
+    const worst = SEV_ORDER.find(v => fs.some(f => f.severity === v));
+    return `${sevPill(worst)} <span style="font-size:12.5px;color:#6B6264">${fs.length}</span>`;
+  };
+  const cols = 'grid-template-columns:minmax(160px,2fr) repeat(3,minmax(90px,1fr)) 110px';
+  const matrix = `<div style="${card};overflow:hidden" class="table-wrap"><div class="table-min" style="min-width:640px">
+    <div style="display:grid;${cols};gap:12px;padding:12px 20px;background:#FAF7F6;border-bottom:1px solid #EFE8E6;font-size:12px;color:#6B6264;font-weight:600"><div>หมวดปัญหา</div>${SEC_SOURCES.map(x => `<div>${x[1]}</div>`).join('')}<div>พบตรงกัน</div></div>
+    ${cats.map(c => { const n = SEC_SOURCES.filter(([k]) => r[k] && r[k].findings.some(f => f.category === c)).length; return `
+    <div style="display:grid;${cols};gap:12px;padding:11px 20px;border-bottom:1px solid #F3EDEC;align-items:center;font-size:13.5px">
+      <div style="font-weight:600">${esc(s.categories[c])}</div>${SEC_SOURCES.map(([k]) => `<div>${cell(k, c)}</div>`).join('')}
+      <div style="font-size:12.5px;font-weight:600;color:${n === 3 ? '#1E6B3A' : n === 2 ? '#8A5A00' : '#8A7F81'}">${n}/3 แหล่ง</div>
+    </div>`; }).join('') || emptyRow('ไม่พบปัญหาจากทุกแหล่ง')}
+  </div></div>`;
+
+  // รายละเอียดทีละแหล่ง
+  const tab = S.secTab || 'snyk';
+  const src = r[tab] || { findings: [] };
+  const verdicts = (r.claude && r.claude.snykVerdicts) || {};
+  const list = [...src.findings].sort((a, b) => SEV_ORDER.indexOf(a.severity) - SEV_ORDER.indexOf(b.severity)).map(f => `
+    <div style="padding:14px 20px;border-bottom:1px solid #F3EDEC;display:flex;flex-direction:column;gap:5px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${sevPill(f.severity)}<b style="font-size:14px">${esc(f.title)}</b>
+        <span style="font-size:12px;color:#8A7F81">${esc(s.categories[f.category] || f.category)}</span></div>
+      ${f.file ? `<div class="mono" style="font-size:12px;color:#7B1E2B">${esc(f.file)}${f.line ? ':' + f.line : ''}</div>` : ''}
+      <div style="font-size:13px;color:#3E3537;line-height:1.6;word-break:break-word">${esc(f.detail)}</div>
+      ${f.fix ? `<div style="font-size:12.5px;color:#1E6B3A">วิธีแก้: ${esc(f.fix)}</div>` : ''}
+      ${tab === 'snyk' && verdicts[f.id] ? `<div style="font-size:12.5px;color:#2B4C8C"><i class="bi bi-stars"></i> ความเห็น Claude: ${esc(verdicts[f.id])}</div>` : ''}
+    </div>`).join('');
+  const tabs = SEC_SOURCES.map(([k, label]) => `<button data-act="secTab" data-v="${k}" style="padding:8px 14px;border-radius:8px;font-size:13.5px;font-weight:600;background:${tab === k ? '#7B1E2B' : '#F4F1EF'};color:${tab === k ? '#fff' : '#5A5052'}">${label} (${r[k] ? r[k].findings.length : 0})</button>`).join('');
+
+  return `${head}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">${tiles}</div>
+<div><div style="font-weight:600;font-size:16px;margin-bottom:10px">เปรียบเทียบตามหมวดปัญหา</div>${matrix}</div>
+<div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${tabs}</div>
+  <div style="${card};overflow:hidden">${list || emptyRow(src.error ? esc(src.error) : 'ไม่พบปัญหา')}</div></div>`;
+}
+async function loadSec() {
+  if (S._loadingSec) return;
+  S._loadingSec = true;
+  try {
+    S.sec = await api('/api/security');
+    render();
+    if (S.sec.running) setTimeout(loadSec, 4000);
+  } catch (e) { toast(e.message); } finally { S._loadingSec = false; }
+}
+async function runSecScan() {
+  try {
+    await api('/api/security/scan', { method: 'POST' });
+    S.sec = { ...S.sec, running: true };
+    render();
+    setTimeout(loadSec, 4000);
+  } catch (e) { toast(e.message); }
+}
+
 // ---------------- page: users (admin) ----------------
 function pageUsers() {
   if (!isAdmin()) return '';
   if (!S.users) { loadUsers(); return `<div style="${card}">${emptyRow('กำลังโหลด…')}</div>`; }
-  const cols = 'grid-template-columns:140px minmax(0,2fr) minmax(0,2fr) 110px 80px';
+  const cols = 'grid-template-columns:140px minmax(0,2fr) minmax(0,2fr) 110px 60px 76px';
   return `
 ${pageHead('จัดการผู้ใช้', 'บัญชีบุคลากรและผู้ดูแลระบบ', `<button data-act="modal" data-v="user" class="btn btn-primary"><i class="bi bi-person-plus"></i>เพิ่มผู้ใช้</button>`)}
 <div style="${card};overflow:hidden" class="table-wrap"><div class="table-min" style="min-width:700px">
-  <div style="display:grid;${cols};gap:12px;padding:12px 20px;background:#FAF7F6;border-bottom:1px solid #EFE8E6;font-size:12px;color:#6B6264;font-weight:600"><div>ชื่อผู้ใช้</div><div>ชื่อ-สกุล</div><div>ตำแหน่ง / กลุ่มงาน</div><div>บทบาท</div><div>ผลงาน</div></div>
+  <div style="display:grid;${cols};gap:12px;padding:12px 20px;background:#FAF7F6;border-bottom:1px solid #EFE8E6;font-size:12px;color:#6B6264;font-weight:600"><div>ชื่อผู้ใช้</div><div>ชื่อ-สกุล</div><div>ตำแหน่ง / กลุ่มงาน</div><div>บทบาท</div><div>ผลงาน</div><div></div></div>
   ${S.users.map(u => `
   <div style="display:grid;${cols};gap:12px;padding:13px 20px;border-bottom:1px solid #F3EEEC;font-size:13.5px;align-items:center">
     <div class="mono" style="font-size:13px">${esc(u.username)}</div><div style="font-weight:500">${esc(u.name)}</div>
     <div style="color:#5A5052">${esc((u.position || '-') + (u.level || ''))}<div style="font-size:12px;color:#8A7F81">${esc(u.group_name || '')}</div></div>
     <div>${u.role === 'admin' ? '<span style="font-size:12px;font-weight:600;background:#4A0F18;color:#F1D9A0;padding:2px 9px;border-radius:20px">ผู้ดูแลระบบ</span>' : '<span style="font-size:12px;padding:2px 9px;border-radius:20px;background:#F4F1EF;color:#5A5052">บุคลากร</span>'}</div>
-    <div>${u.works}</div>
+    <div>${u.works}${u.locked ? ' <i class="bi bi-lock-fill" title="ถูกหน่วงการเข้าสู่ระบบ" style="color:#B3261E"></i>' : ''}</div>
+    <div style="display:flex;gap:2px"><button class="icon-btn" data-act="editUser" data-id="${u.id}" title="แก้ไข"><i class="bi bi-pencil"></i></button>${u.id === S.data.user.id ? '' : `<button class="icon-btn" data-act="delUser" data-id="${u.id}" title="ลบ"><i class="bi bi-trash3"></i></button>`}</div>
   </div>`).join('')}
 </div></div>`;
 }
@@ -849,6 +939,30 @@ function viewModal() {
     body = `
       <label class="field">รหัสผ่านเดิม<input name="current" type="password" required autocomplete="current-password"></label>
       <label class="field">รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)<input name="next" type="password" required minlength="8" autocomplete="new-password"></label>`;
+  } else if (m.type === 'userEdit') {
+    const x = (S.users || []).find(v => v.id === m.id) || {};
+    const self = x.id === S.data.user.id;
+    title = 'แก้ไขผู้ใช้ — ' + esc(x.name || '');
+    body = `
+      <input type="hidden" name="id" value="${x.id}">
+      <fieldset style="border:1px solid #EFE8E6;border-radius:12px;padding:12px 14px 14px;background:#FCFAF9;display:flex;flex-direction:column;gap:12px;margin:0">
+        <legend style="font-size:13px;font-weight:600;color:#7B1E2B;padding:0 6px"><i class="bi bi-box-arrow-in-right"></i> ข้อมูลเข้าสู่ระบบ</legend>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <label class="field">ชื่อผู้ใช้ *<input name="username" required pattern="[a-zA-Z0-9._\\-]{3,32}" value="${esc(x.username)}"></label>
+          <label class="field">รหัสผ่านใหม่ (เว้นว่างถ้าไม่เปลี่ยน)<input name="password" type="password" minlength="8" placeholder="อย่างน้อย 8 ตัวอักษร" autocomplete="new-password"></label>
+        </div>
+        ${x.locked ? '<label style="display:flex;gap:8px;align-items:center;font-size:13.5px"><input type="checkbox" name="unlock" value="1" checked> ปลดล็อกการเข้าสู่ระบบ</label>' : ''}
+      </fieldset>
+      <label class="field">บทบาท<select name="role" ${self ? 'disabled title="ไม่สามารถเปลี่ยนบทบาทของตัวเองได้"' : ''}><option value="staff" ${x.role === 'staff' ? 'selected' : ''}>บุคลากร</option><option value="admin" ${x.role === 'admin' ? 'selected' : ''}>ผู้ดูแลระบบ</option></select></label>
+      <label class="field">ชื่อ-สกุล *<input name="name" required value="${esc(x.name)}"></label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <label class="field">ตำแหน่ง<input name="position" value="${esc(x.position)}"></label>
+        <label class="field">ระดับ<input name="level" value="${esc(x.level)}"></label>
+      </div>
+      <label class="field">สังกัด / กลุ่มงาน<input name="group_name" value="${esc(x.group_name)}"></label>
+      <label class="field">ผู้บังคับบัญชา<input name="supervisor" value="${esc(x.supervisor)}"></label>
+      <label class="field">หน้าที่ความรับผิดชอบหลัก (บรรทัดละ 1 ข้อ)<textarea name="duties" rows="4">${esc(x.duties)}</textarea></label>
+      <div style="font-size:12px;color:#8A7F81">การเปลี่ยนบทบาทหรือรหัสผ่านจะทำให้ผู้ใช้นั้นต้องเข้าสู่ระบบใหม่</div>`;
   } else if (m.type === 'user') {
     title = 'เพิ่มผู้ใช้';
     body = `
@@ -1055,6 +1169,8 @@ const A = {
   chatMode: el => { set({ mode: el.dataset.v, _scrollChat: true }); focusChat(); },
   aiCreateUsers: el => aiCreateUsers(+el.dataset.v),
   aiCheck: () => runAiCheck(),
+  secScan: () => runSecScan(),
+  secTab: el => set({ secTab: el.dataset.v }),
   resetChat: () => set(S.mode === 'ask' ? { askMsgs: S.askMsgs.slice(0, 1) } : { ivStep: 0, ivAnswers: [], ivMsgs: [greet()], ivDone: false, draftSummary: '' }),
   chip: el => { S.chatInput = (S.chatInput ? S.chatInput + ' ' : '') + el.dataset.v; render(); focusChat(); },
   send, polish, saveDraft, mic: toggleMic,
@@ -1074,6 +1190,14 @@ const A = {
   closeModal: () => set({ modal: null, formErr: '', pendingFiles: [] }),
   editWork: el => set({ modal: { type: 'work', id: +el.dataset.id }, formErr: '' }),
   uploadFor: el => set({ modal: { type: 'evidence', workId: +el.dataset.id }, formErr: '', pendingFiles: [] }),
+  editUser: el => set({ modal: { type: 'userEdit', id: +el.dataset.id }, formErr: '' }),
+  delUser: el => {
+    const u = (S.users || []).find(v => v.id === +el.dataset.id);
+    if (u && confirm('ลบผู้ใช้ “' + u.name + '” (' + u.username + ') ?\nผลงาน หลักฐาน และไฟล์ทั้งหมดของผู้ใช้นี้จะถูกลบถาวร')) {
+      S.users = null;
+      reloadAfter(api('/api/users/' + u.id, { method: 'DELETE' }), 'ลบผู้ใช้แล้ว');
+    }
+  },
   delWork: el => {
     const w = S.data.works.find(x => x.id === +el.dataset.id);
     if (w && confirm('ลบผลงาน “' + w.title + '” ?\n(หลักฐานที่เชื่อมโยงจะยังอยู่ แต่ไม่ผูกกับผลงานนี้)')) reloadAfter(api('/api/works/' + w.id, { method: 'DELETE' }), 'ลบผลงานแล้ว');
@@ -1133,6 +1257,15 @@ const FORMS = {
   },
   profile: async fd => { await api('/api/profile', { method: 'PUT', body: Object.fromEntries(fd.entries()) }); return 'บันทึกข้อมูลส่วนตัวแล้ว'; },
   password: async fd => { await api('/api/password', { method: 'POST', body: { current: fd.get('current'), next: fd.get('next') } }); return 'เปลี่ยนรหัสผ่านแล้ว'; },
+  userEdit: async fd => {
+    const b = Object.fromEntries(fd.entries());
+    const id = b.id; delete b.id;
+    if (!b.password) delete b.password;
+    b.unlock = !!b.unlock;
+    await api('/api/users/' + id, { method: 'PUT', body: b });
+    S.users = null;
+    return 'บันทึกข้อมูลผู้ใช้แล้ว';
+  },
   user: async fd => { await api('/api/users', { method: 'POST', body: Object.fromEntries(fd.entries()) }); S.users = null; return 'เพิ่มผู้ใช้แล้ว'; },
   ai: async fd => {
     const body = { provider: S.aiForm.provider, baseUrl: fd.get('baseUrl'), model: fd.get('model') };

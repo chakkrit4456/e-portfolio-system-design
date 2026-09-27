@@ -9,12 +9,36 @@ const multer = require('multer');
 const rateLimit = require('express-rate-limit');
 const { pool, migrate, audit } = require('./db');
 const seed = require('./db/seed');
+const security = require('./security');
 
 const PORT = process.env.PORT || 3000;
-const SECRET = process.env.SESSION_SECRET || 'dev-secret-please-change';
 const COOKIE_SECURE = String(process.env.COOKIE_SECURE || '').toLowerCase() === 'true';
+const IS_PROD = process.env.NODE_ENV === 'production' || COOKIE_SECURE;
+// SESSION_SECRET signs sessions/CSRF and encrypts the stored AI key — refuse weak/placeholder values in production
+const SECRET = (() => {
+  const s = process.env.SESSION_SECRET || '';
+  if (s.length >= 32 && !/change-me|dev-secret/i.test(s)) return s;
+  if (IS_PROD) {
+    console.error('SESSION_SECRET ไม่ได้ตั้งหรืออ่อนเกินไป (ต้องยาว ≥ 32 ตัวอักษรและไม่ใช่ค่าตัวอย่าง) — สุ่มใหม่ด้วย: openssl rand -hex 48');
+    process.exit(1);
+  }
+  if (s) { console.warn('คำเตือน: SESSION_SECRET อ่อนเกินไป — ใช้ได้เฉพาะตอนพัฒนาเท่านั้น'); return s; }
+  // Dev without SESSION_SECRET: random secret kept in a git-ignored file (no hardcoded fallback in source)
+  const f = path.join(__dirname, '.dev-secret');
+  try { return fs.readFileSync(f, 'utf8').trim(); } catch { /* create below */ }
+  const gen = crypto.randomBytes(48).toString('hex');
+  fs.writeFileSync(f, gen, { mode: 0o600 });
+  console.warn('คำเตือน: ไม่ได้ตั้ง SESSION_SECRET — สร้างค่าสุ่มไว้ที่ .dev-secret (ใช้ได้เฉพาะตอนพัฒนาเท่านั้น)');
+  return gen;
+})();
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+// Resolve a stored upload name to a path that can never leave UPLOAD_DIR
+function uploadPath(name) {
+  const p = path.join(UPLOAD_DIR, path.basename(String(name)));
+  if (path.dirname(p) !== UPLOAD_DIR) throw new Error('invalid file name');
+  return p;
+}
 
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
@@ -23,8 +47,12 @@ const WORK_TYPES = ['โครงการ', 'งานประจำ', 'วิ
 const WORK_STATUSES = ['รอตรวจสอบ', 'กำลังดำเนินการ', 'รอหลักฐาน', 'รับรองแล้ว'];
 const EV_STATUSES = ['รอตรวจสอบ', 'ตรวจแล้ว'];
 
-// ---------- API key encryption (AES-256-GCM, key derived from SESSION_SECRET) ----------
-const ENC_KEY = crypto.createHash('sha256').update('ai-key:' + SECRET).digest();
+// ---------- API key encryption (AES-256-GCM) ----------
+// AI_ENC_KEY (if set) is used so rotating SESSION_SECRET doesn't lose the stored key; the SESSION_SECRET-derived
+// key stays as a fallback for decrypting values saved before AI_ENC_KEY existed (re-encrypted on next save).
+const deriveKey = k => crypto.createHash('sha256').update('ai-key:' + k).digest();
+const DEC_KEYS = [process.env.AI_ENC_KEY && deriveKey(process.env.AI_ENC_KEY), deriveKey(SECRET)].filter(Boolean);
+const ENC_KEY = DEC_KEYS[0];
 function encrypt(text) {
   if (!text) return '';
   const iv = crypto.randomBytes(12);
@@ -35,14 +63,15 @@ function encrypt(text) {
 function decrypt(blob) {
   if (!blob) return '';
   if (!blob.startsWith('enc:')) return blob;
-  try {
-    const raw = Buffer.from(blob.slice(4), 'base64');
-    const d = crypto.createDecipheriv('aes-256-gcm', ENC_KEY, raw.subarray(0, 12));
-    d.setAuthTag(raw.subarray(12, 28));
-    return Buffer.concat([d.update(raw.subarray(28)), d.final()]).toString('utf8');
-  } catch {
-    return '';
+  const raw = Buffer.from(blob.slice(4), 'base64');
+  for (const key of DEC_KEYS) {
+    try {
+      const d = crypto.createDecipheriv('aes-256-gcm', key, raw.subarray(0, 12));
+      d.setAuthTag(raw.subarray(12, 28));
+      return Buffer.concat([d.update(raw.subarray(28)), d.final()]).toString('utf8');
+    } catch { /* try next key */ }
   }
+  return '';
 }
 
 async function getAi() {
@@ -53,6 +82,70 @@ async function getAi() {
 function aiReady(a) {
   return !!(a.baseUrl && a.model && (a.apiKey || a.provider === 'local'));
 }
+// SSRF guard for the admin-configured AI endpoint: http(s) only; cloud-metadata/link-local always blocked;
+// loopback/private networks only for the "Local LLM" provider, and every other provider must use https.
+const net = require('net');
+function ipBlocked(ip, allowPrivate) {
+  if (net.isIPv6(ip) && /^::ffff:/i.test(ip)) ip = ip.slice(7);
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split('.').map(Number);
+    if (a === 0 || (a === 169 && b === 254) || a >= 224) return true; // unspecified, link-local/metadata, multicast
+    const priv = a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+    return priv && !allowPrivate;
+  }
+  const v = ip.toLowerCase();
+  if (v === '::' || /^fe[89ab]/.test(v) || /^ff/.test(v)) return true;
+  return (v === '::1' || /^f[cd]/.test(v)) && !allowPrivate;
+}
+// Pin the connection to addresses validated at connect time — the DNS check and the actual connect use the
+// same lookup, so DNS rebinding between check and fetch (TOCTOU) can't reach a blocked address.
+function guardedLookup(allowPrivate) {
+  return (hostname, opts, cb) => {
+    require('dns').lookup(hostname, { ...opts, all: true }, (err, addrs) => {
+      if (err) return cb(err);
+      if (!addrs.length || addrs.some(x => ipBlocked(x.address, allowPrivate))) {
+        return cb(Object.assign(new Error('ปลายทางเป็นเครือข่ายภายในที่ไม่อนุญาต'), { code: 'EBLOCKED' }));
+      }
+      if (opts && opts.all) cb(null, addrs);
+      else cb(null, addrs[0].address, addrs[0].family);
+    });
+  };
+}
+// Minimal fetch replacement over http(s).request using the guarded lookup; redirects are never followed.
+function aiFetch(a, urlStr, { method = 'GET', headers = {}, body, timeout = 60000 } = {}) {
+  const url = new URL(urlStr);
+  const mod = url.protocol === 'https:' ? require('https') : require('http');
+  return new Promise((resolve, reject) => {
+    const req = mod.request(url, { method, headers, lookup: guardedLookup(a.provider === 'local'), timeout }, res => {
+      const chunks = [];
+      let size = 0;
+      res.on('data', c => {
+        size += c.length;
+        if (size > 10 * 1024 * 1024) return req.destroy(new Error('ข้อมูลตอบกลับใหญ่เกินไป'));
+        chunks.push(c);
+      });
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        resolve({ status: res.statusCode, ok: res.statusCode >= 200 && res.statusCode < 300, json: async () => JSON.parse(text) });
+      });
+      res.on('error', reject);
+    });
+    req.on('timeout', () => req.destroy(Object.assign(new Error('timeout'), { name: 'TimeoutError' })));
+    req.on('error', e => reject(e.name === 'TimeoutError' ? e : Object.assign(new Error(e.message), { cause: e })));
+    if (body) req.write(body);
+    req.end();
+  });
+}
+async function checkAiUrl(a) {
+  let url;
+  try { url = new URL(a.baseUrl); } catch { throw new Error('Base URL ไม่ถูกต้อง'); }
+  const local = a.provider === 'local';
+  if (!(url.protocol === 'https:' || (local && url.protocol === 'http:'))) throw new Error('Base URL ต้องเป็น https:// (http:// ใช้ได้เฉพาะ Local LLM)');
+  const addrs = await require('dns').promises.lookup(url.hostname.replace(/^\[|\]$/g, ''), { all: true })
+    .catch(() => { throw new Error('หา DNS ของ ' + url.hostname + ' ไม่พบ'); });
+  if (addrs.some(x => ipBlocked(x.address, local))) throw new Error('Base URL ชี้ไปยังเครือข่ายภายในที่ไม่อนุญาต (ใช้ได้เฉพาะผู้ให้บริการ Local LLM)');
+  return url;
+}
 async function callLLM(messages) {
   const a = await getAi();
   if (!aiReady(a)) throw new Error('ผู้ดูแลระบบยังไม่ได้เปิดการเชื่อมต่อ AI');
@@ -62,13 +155,14 @@ async function callLLM(messages) {
     headers['HTTP-Referer'] = 'http://localhost';
     headers['X-Title'] = 'BPCD e-Portfolio';
   }
+  await checkAiUrl(a);
   let r;
   try {
-    r = await fetch(a.baseUrl.replace(/\/$/, '') + '/chat/completions', {
+    r = await aiFetch(a, a.baseUrl.replace(/\/$/, '') + '/chat/completions', {
       method: 'POST',
       headers,
       body: JSON.stringify({ model: a.model, messages, temperature: 0.4 }),
-      signal: AbortSignal.timeout(60000)
+      timeout: 60000
     });
   } catch (e) {
     const why = e.name === 'TimeoutError' ? 'หมดเวลารอ 60 วินาที' : (e.cause && e.cause.code) || e.message;
@@ -82,10 +176,35 @@ async function callLLM(messages) {
 // ---------- App ----------
 const app = express();
 app.set('trust proxy', 1);
+app.disable('x-powered-by');
 // เวอร์ชันของไฟล์หน้าเว็บ — client เทียบกับ header นี้เพื่อรู้ว่ามี deploy ใหม่และต้องรีเฟรช
 const APP_VERSION = crypto.createHash('sha1')
   .update(['app.js', 'styles.css', 'index.html'].map(f => fs.readFileSync(path.join(__dirname, 'public', f))).join(''))
   .digest('hex').slice(0, 12);
+// Security headers (minimal helmet equivalent, no extra dependency)
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
+  "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
+  "img-src 'self' data: blob:",
+  "media-src 'self' blob:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'"
+].join('; ');
+app.use((req, res, next) => {
+  res.set({
+    'Content-Security-Policy': CSP,
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'same-origin'
+  });
+  if (COOKIE_SECURE) res.set('Strict-Transport-Security', 'max-age=31536000');
+  next();
+});
 app.use('/api', (req, res, next) => { res.set('X-App-Version', APP_VERSION); next(); });
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json({ limit: '1mb' }));
@@ -145,20 +264,23 @@ app.post('/api/login', loginLimiter, wrap(async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM users WHERE username=$1', [String(username || '').trim()]);
   const u = rows[0];
 
+  // Same response whether the user exists, is throttled, or the password is wrong (no username enumeration)
+  const LOGIN_FAIL = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (หากผิดหลายครั้ง ระบบจะหน่วงเวลาชั่วครู่ กรุณารอแล้วลองใหม่)';
   if (u && u.locked_until && new Date(u.locked_until) > new Date()) {
-    const mins = Math.ceil((new Date(u.locked_until) - new Date()) / 60000);
-    return res.status(423).json({ error: `บัญชีถูกล็อกชั่วคราวจากการเข้าสู่ระบบผิดหลายครั้ง กรุณาลองใหม่ในอีก ${mins} นาที` });
+    return res.status(401).json({ error: LOGIN_FAIL });
   }
 
   const ok = u && (await bcrypt.compare(String(password || ''), u.password_hash));
   if (!u || !ok) {
     if (u) {
       const attempts = u.failed_attempts + 1;
-      const lock = attempts >= MAX_LOGIN_ATTEMPTS ? new Date(Date.now() + LOCKOUT_MS) : null;
+      // Progressive delay (30s, 1m, 2m … capped at LOCKOUT_MS) rather than a long hard lock others could abuse
+      const lock = attempts >= MAX_LOGIN_ATTEMPTS
+        ? new Date(Date.now() + Math.min(LOCKOUT_MS, 30000 * 2 ** Math.min(attempts - MAX_LOGIN_ATTEMPTS, 10))) : null;
       await pool.query('UPDATE users SET failed_attempts=$1, locked_until=$2 WHERE id=$3', [attempts, lock, u.id]);
       if (lock) audit(u.id, 'account_locked');
     }
-    return res.status(401).json({ error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
+    return res.status(401).json({ error: LOGIN_FAIL });
   }
 
   await pool.query('UPDATE users SET failed_attempts=0, locked_until=NULL WHERE id=$1', [u.id]);
@@ -291,7 +413,7 @@ function kindOf(name) {
   return 'PDF';
 }
 // Real file-content check (magic bytes) so a renamed .exe etc. can't slip past the extension filter.
-// .csv/.doc/.xls (legacy) have no reliable universal signature, so they're allowed through on extension alone.
+// .doc/.xls must be OLE2 files; .csv must look like plain text (no binary, no HTML/SVG markup).
 function contentMatchesExt(ext, buf) {
   const starts = sig => sig.every((b, i) => buf[i] === b);
   switch (ext) {
@@ -305,18 +427,25 @@ function contentMatchesExt(ext, buf) {
     case '.webp': return starts([0x52, 0x49, 0x46, 0x46]) && buf.slice(8, 12).toString('ascii') === 'WEBP'; // RIFF....WEBP
     case '.mp4':
     case '.mov': return buf.slice(4, 8).toString('ascii') === 'ftyp';
-    default: return true; // .doc, .xls, .csv — no reliable signature to check
+    case '.doc':
+    case '.xls': return starts([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]); // OLE2 compound file
+    case '.csv': { // plain text only: no binary bytes, no markup/script
+      if (buf.includes(0)) return false;
+      const head = buf.toString('utf8').replace(/^\uFEFF/, '').trimStart().toLowerCase();
+      return !/^</.test(head) && !/<(script|html|svg|iframe|body|object)\b/.test(head);
+    }
+    default: return false;
   }
 }
 async function verifyUploadedFiles(files) {
   for (const f of files) {
     const ext = path.extname(f.filename).toLowerCase();
-    const fd = fs.openSync(f.path, 'r');
-    const buf = Buffer.alloc(16);
-    fs.readSync(fd, buf, 0, 16, 0);
+    const fd = fs.openSync(uploadPath(f.filename), 'r');
+    const buf = Buffer.alloc(4096);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
     fs.closeSync(fd);
-    if (!contentMatchesExt(ext, buf)) {
-      for (const rm of files) fs.unlink(rm.path, () => {});
+    if (!contentMatchesExt(ext, buf.subarray(0, n))) {
+      for (const rm of files) fs.unlink(uploadPath(rm.filename), () => {});
       throw new Error('ไฟล์ "' + f.originalname + '" มีเนื้อหาไม่ตรงกับนามสกุลไฟล์');
     }
   }
@@ -378,7 +507,7 @@ app.put('/api/evidence/:id', auth, wrap(async (req, res) => {
 app.delete('/api/evidence/:id', auth, wrap(async (req, res) => {
   const { rows } = await pool.query('DELETE FROM evidence WHERE id=$1 AND user_id=$2 RETURNING file_name', [req.params.id, uid(req)]);
   if (!rows[0]) return res.status(404).json({ error: 'ไม่พบหลักฐาน' });
-  if (rows[0].file_name) fs.unlink(path.join(UPLOAD_DIR, rows[0].file_name), () => {});
+  if (rows[0].file_name) fs.unlink(uploadPath(rows[0].file_name), () => {});
   audit(uid(req), 'evidence_delete', req.params.id);
   res.json({ ok: true });
 }));
@@ -386,8 +515,10 @@ app.delete('/api/evidence/:id', auth, wrap(async (req, res) => {
 app.get('/files/:id', auth, wrap(async (req, res) => {
   const { rows } = await pool.query('SELECT name,file_name FROM evidence WHERE id=$1 AND user_id=$2', [req.params.id, uid(req)]);
   if (!rows[0] || !rows[0].file_name) return res.status(404).send('Not found');
-  res.setHeader('Content-Disposition', "inline; filename*=UTF-8''" + encodeURIComponent(rows[0].name));
-  res.sendFile(path.join(UPLOAD_DIR, path.basename(rows[0].file_name)));
+  // Only types with a verified signature are shown inline; .doc/.xls/.csv (unchecked content) are forced to download
+  const inline = /.(pdf|jpe?g|png|gif|webp|mp4|mov)$/i.test(rows[0].file_name);
+  res.setHeader('Content-Disposition', (inline ? 'inline' : 'attachment') + "; filename*=UTF-8''" + encodeURIComponent(rows[0].name));
+  res.sendFile(uploadPath(rows[0].file_name));
 }));
 
 // ---------- AI ----------
@@ -406,6 +537,9 @@ app.put('/api/settings/ai', admin, wrap(async (req, res) => {
     // apiKey: undefined = keep, '' = clear, string = replace
     apiKey: encrypt(b.apiKey === undefined ? cur.apiKey : String(b.apiKey).trim())
   };
+  if (next.baseUrl) {
+    try { await checkAiUrl(next); } catch (e) { return res.status(400).json({ error: e.message }); }
+  }
   await pool.query(
     `INSERT INTO settings(key,value) VALUES('ai',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`,
     [JSON.stringify(next)]
@@ -456,7 +590,8 @@ app.get('/api/ai/check', admin, wrap(async (req, res) => {
         add('DNS: ' + url.hostname, true, address);
         try {
           const headers = a.apiKey ? { Authorization: 'Bearer ' + a.apiKey } : {};
-          const r = await fetch(a.baseUrl.replace(/\/$/, '') + '/models', { headers, signal: AbortSignal.timeout(10000) });
+          await checkAiUrl(a);
+          const r = await aiFetch(a, a.baseUrl.replace(/\/$/, '') + '/models', { headers, timeout: 10000 });
           add('เชื่อมต่อ HTTPS ถึง endpoint', true, 'ตอบกลับ HTTP ' + r.status);
           if (r.status === 401 || r.status === 403) add('API Key ใช้ได้', false, 'HTTP ' + r.status, 'API Key ไม่ถูกต้องหรือหมดอายุ — สร้าง key ใหม่ที่ผู้ให้บริการ');
           else if (r.ok && a.model) {
@@ -566,7 +701,8 @@ app.post('/api/ai/polish', auth, wrap(async (req, res) => {
 // ---------- Admin: users ----------
 app.get('/api/users', admin, wrap(async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT u.id,u.username,u.name,u.position,u.level,u.group_name,u.role,
+    `SELECT u.id,u.username,u.name,u.position,u.level,u.group_name,u.supervisor,u.duties,u.role,
+            (u.locked_until IS NOT NULL AND u.locked_until > now()) AS locked,
             (SELECT count(*)::int FROM works w WHERE w.user_id=u.id) AS works
      FROM users u ORDER BY u.id`
   );
@@ -601,6 +737,86 @@ app.post('/api/users', admin, wrap(async (req, res) => {
   } finally {
     client.release();
   }
+}));
+
+// Log a user out everywhere (after role change, password reset or deletion)
+async function killSessions(userId) {
+  await pool.query("DELETE FROM session WHERE (sess->'user'->>'id')::int = $1", [userId]).catch(() => {});
+}
+async function adminCount(exceptId) {
+  const { rows } = await pool.query("SELECT count(*)::int AS n FROM users WHERE role='admin' AND id<>$1", [exceptId]);
+  return rows[0].n;
+}
+
+app.put('/api/users/:id', admin, wrap(async (req, res) => {
+  const id = +req.params.id;
+  const b = req.body || {};
+  const { rows: cur } = await pool.query('SELECT * FROM users WHERE id=$1', [id]);
+  const u = cur[0];
+  if (!u) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+  const username = String(b.username ?? u.username).trim();
+  if (!/^[a-zA-Z0-9._-]{3,32}$/.test(username)) return res.status(400).json({ error: 'ชื่อผู้ใช้ 3–32 ตัว (a-z 0-9 . _ -)' });
+  const name = String(b.name ?? u.name).trim();
+  if (!name) return res.status(400).json({ error: 'กรุณาระบุชื่อ-สกุล' });
+  const role = b.role === 'admin' || b.role === 'staff' ? b.role : u.role;
+  if (u.role === 'admin' && role !== 'admin') {
+    if (id === uid(req)) return res.status(400).json({ error: 'ไม่สามารถลดสิทธิ์ผู้ดูแลระบบของตัวเองได้' });
+    if (!(await adminCount(id))) return res.status(400).json({ error: 'ต้องมีผู้ดูแลระบบอย่างน้อย 1 คน' });
+  }
+  const password = String(b.password || '');
+  if (password && password.length < 8) return res.status(400).json({ error: 'รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร' });
+  const s = v => (v == null ? null : String(v).trim() || null);
+  const pick = k => (k in b ? s(b[k]) : u[k]);
+  try {
+    await pool.query(
+      `UPDATE users SET username=$1,name=$2,position=$3,level=$4,group_name=$5,supervisor=$6,duties=$7,role=$8,
+         password_hash=COALESCE($9,password_hash),
+         failed_attempts=CASE WHEN $10 THEN 0 ELSE failed_attempts END,
+         locked_until=CASE WHEN $10 THEN NULL ELSE locked_until END
+       WHERE id=$11`,
+      [username, name, pick('position'), pick('level'), pick('group_name'), pick('supervisor'), pick('duties'), role,
+        password ? await bcrypt.hash(password, 10) : null, !!b.unlock || !!password, id]
+    );
+  } catch (e) {
+    if (e.code === '23505') return res.status(400).json({ error: 'ชื่อผู้ใช้นี้มีอยู่แล้ว' });
+    throw e;
+  }
+  if (role !== u.role || password) await killSessions(id);
+  if (id === uid(req)) req.session.user.name = name;
+  audit(uid(req), 'user_update', username + (role !== u.role ? ' role=' + role : '') + (password ? ' password_reset' : ''));
+  res.json({ ok: true });
+}));
+
+app.delete('/api/users/:id', admin, wrap(async (req, res) => {
+  const id = +req.params.id;
+  if (id === uid(req)) return res.status(400).json({ error: 'ไม่สามารถลบบัญชีของตัวเองได้' });
+  const { rows } = await pool.query('SELECT username,role FROM users WHERE id=$1', [id]);
+  if (!rows[0]) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+  if (rows[0].role === 'admin' && !(await adminCount(id))) return res.status(400).json({ error: 'ต้องมีผู้ดูแลระบบอย่างน้อย 1 คน' });
+  const { rows: files } = await pool.query('SELECT file_name FROM evidence WHERE user_id=$1 AND file_name IS NOT NULL', [id]);
+  await pool.query('DELETE FROM users WHERE id=$1', [id]);
+  for (const f of files) fs.unlink(uploadPath(f.file_name), () => {});
+  await killSessions(id);
+  audit(uid(req), 'user_delete', rows[0].username);
+  res.json({ ok: true });
+}));
+
+// ---------- Admin: security scan (Snyk + DeepSeek + Claude) ----------
+app.get('/api/security', admin, wrap(async (req, res) => {
+  const { rows } = await pool.query("SELECT value FROM settings WHERE key='security_scan'");
+  res.json({ running: security.isRunning(), categories: security.CATEGORIES, result: rows[0] ? rows[0].value : null });
+}));
+
+app.post('/api/security/scan', admin, wrap(async (req, res) => {
+  if (!security.isRunning()) {
+    audit(uid(req), 'security_scan');
+    // ใช้เวลาหลายนาที — รันเบื้องหลัง แล้วให้หน้าเว็บถาม GET /api/security ซ้ำจนเสร็จ
+    security.runScan(result => pool.query(
+      `INSERT INTO settings(key,value) VALUES('security_scan',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`,
+      [JSON.stringify(result)]
+    )).catch(e => console.error('security scan failed:', e));
+  }
+  res.json({ running: true });
 }));
 
 // ---------- Errors / SPA fallback ----------

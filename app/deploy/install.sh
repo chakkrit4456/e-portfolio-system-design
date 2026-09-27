@@ -245,6 +245,7 @@ elif [ -d "$APP_DIR" ]; then
     cat > "$ENV_FILE" <<EOF
 DATABASE_URL=postgres://$DB_USER:$DB_PASS@localhost:5432/$DB_NAME
 SESSION_SECRET=$(openssl rand -hex 48)
+AI_ENC_KEY=$(openssl rand -hex 32)
 PORT=$APP_PORT
 SEED_PASSWORD=$SEED_PASS
 COOKIE_SECURE=$use_https
