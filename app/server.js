@@ -313,10 +313,12 @@ app.get('/api/portfolio', auth, wrap(async (req, res) => {
   const [u, works, ev, kpis, comps, ai] = await Promise.all([
     pool.query('SELECT id,username,name,position,level,group_name,supervisor,role,duties FROM users WHERE id=$1', [id]),
     pool.query(
-      `SELECT w.*, (SELECT count(*)::int FROM evidence e WHERE e.work_id=w.id) AS ev
+      `SELECT w.*, (SELECT count(*)::int FROM evidence e WHERE e.work_id=w.id) AS ev,
+              (SELECT COALESCE(json_agg(json_build_object('kpi_id', wk.kpi_id, 'value', wk.value::float)), '[]')
+                 FROM work_kpis wk WHERE wk.work_id=w.id) AS kpi_links
        FROM works w WHERE w.user_id=$1 ORDER BY w.created_at DESC, w.id DESC`, [id]),
     pool.query('SELECT id,work_id,name,kind,url,file_name,ev_date,status,checker FROM evidence WHERE user_id=$1 ORDER BY id', [id]),
-    pool.query('SELECT id,name,source,weight::float,target,actual,pct::float,score::float FROM kpis WHERE user_id=$1 ORDER BY id', [id]),
+    pool.query('SELECT id,name,source,weight::float,target,actual,pct::float,score::float,unit,auto,certified_only FROM kpis WHERE user_id=$1 ORDER BY id', [id]),
     pool.query('SELECT id,grp,name,expected,actual FROM competencies WHERE user_id=$1 ORDER BY id', [id]),
     getAi()
   ]);
@@ -345,6 +347,65 @@ app.put('/api/profile', auth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ---------- KPI calculation ----------
+// pct = actual/target (สูงสุด 100); score 5 เมื่อถึงเป้า ลดลง 1 คะแนนต่อทุก 10% ที่ขาด (96% → 4.6, 90% → 4.0)
+const num = v => { if (v == null || v === '') return null; const n = Number(String(v).replace(/,/g, '')); return Number.isFinite(n) ? n : null; };
+const round2 = n => Math.round(n * 100) / 100;
+function kpiText(v, unit) {
+  if (v == null) return null;
+  const t = round2(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  return unit === '%' ? t + '%' : unit ? t + ' ' + unit : t;
+}
+function kpiScore(target, actual) {
+  if (!(target > 0) || actual == null) return { pct: 0, score: 0 };
+  const pct = Math.min(100, Math.round(actual / target * 100));
+  return { pct, score: pct >= 100 ? 5 : Math.max(0, round2(5 - (100 - pct) / 10)) };
+}
+// คำนวณ actual ของ KPI อัตโนมัติจากผลงานที่เชื่อมโยง แล้วอัปเดต pct/score/ข้อความแสดงผลของ KPI ทั้งหมดของผู้ใช้
+async function recomputeKpis(userId, db = pool) {
+  const { rows } = await db.query(
+    `SELECT k.id, k.target_value::float, k.actual_value::float, k.unit, k.auto,
+            (SELECT COALESCE(sum(wk.value), 0)::float FROM work_kpis wk JOIN works w ON w.id = wk.work_id
+              WHERE wk.kpi_id = k.id AND (NOT k.certified_only OR w.status = 'รับรองแล้ว')) AS linked
+       FROM kpis k WHERE k.user_id = $1`, [userId]);
+  for (const k of rows) {
+    if (k.target_value == null) continue; // KPI เดิมที่เป็นข้อความล้วน — ไม่แตะ
+    const actual = k.auto ? k.linked : k.actual_value;
+    const { pct, score } = kpiScore(k.target_value, actual);
+    await db.query('UPDATE kpis SET actual_value=$1, target=$2, actual=$3, pct=$4, score=$5 WHERE id=$6',
+      [actual, kpiText(k.target_value, k.unit), kpiText(actual ?? 0, k.unit), pct, score, k.id]);
+  }
+}
+// เชื่อมผลงานกับ KPI ของเจ้าของผลงานเท่านั้น; คืนชื่อ KPI สำหรับเก็บในช่อง works.kpi (ข้อความแสดงผล)
+async function saveWorkKpis(db, userId, workId, links) {
+  const { rows: own } = await db.query('SELECT id, name FROM kpis WHERE user_id=$1', [userId]);
+  const byId = new Map(own.map(k => [k.id, k.name]));
+  const clean = [];
+  for (const l of links.slice(0, 50)) {
+    const id = +(l && l.kpi_id);
+    if (!byId.has(id) || clean.some(c => c.id === id)) continue;
+    const v = num(l.value);
+    clean.push({ id, value: v != null && v >= 0 ? v : 1 });
+  }
+  await db.query('DELETE FROM work_kpis WHERE work_id=$1', [workId]);
+  for (const c of clean) await db.query('INSERT INTO work_kpis(work_id,kpi_id,value) VALUES($1,$2,$3)', [workId, c.id, c.value]);
+  return clean.map(c => byId.get(c.id)).join(', ') || null;
+}
+async function inTx(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const r = await fn(client);
+    await client.query('COMMIT');
+    return r;
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 // ---------- Works ----------
 function workFields(b) {
   return {
@@ -358,35 +419,54 @@ function workFields(b) {
   };
 }
 
+// kpi_links (ถ้าส่งมา) แทนที่การเชื่อมโยง KPI ของผลงาน และตั้งช่อง kpi เป็นชื่อ KPI ที่เชื่อม
+async function applyWorkKpis(db, req, workId) {
+  if (!Array.isArray(req.body.kpi_links)) return;
+  const names = await saveWorkKpis(db, uid(req), workId, req.body.kpi_links);
+  await db.query('UPDATE works SET kpi=$1 WHERE id=$2', [names, workId]);
+}
+
 app.post('/api/works', auth, wrap(async (req, res) => {
   const f = workFields(req.body || {});
   if (!f.title) return res.status(400).json({ error: 'กรุณาระบุชื่องาน' });
-  const { rows } = await pool.query(
-    `INSERT INTO works(user_id,title,type,ref,period,result,kpi,summary,status)
-     VALUES($1,$2,$3,$4,$5,$6,$7,$8,'รอตรวจสอบ') RETURNING *`,
-    [uid(req), f.title, f.type, f.ref, f.period, f.result, f.kpi, f.summary]
-  );
+  const work = await inTx(async db => {
+    const { rows } = await db.query(
+      `INSERT INTO works(user_id,title,type,ref,period,result,kpi,summary,status)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,'รอตรวจสอบ') RETURNING *`,
+      [uid(req), f.title, f.type, f.ref, f.period, f.result, f.kpi, f.summary]
+    );
+    await applyWorkKpis(db, req, rows[0].id);
+    await recomputeKpis(uid(req), db);
+    return rows[0];
+  });
   audit(uid(req), 'work_create', f.title);
-  res.json(rows[0]);
+  res.json(work);
 }));
 
 app.put('/api/works/:id', auth, wrap(async (req, res) => {
   const f = workFields(req.body || {});
   if (!f.title) return res.status(400).json({ error: 'กรุณาระบุชื่องาน' });
   const status = isAdmin(req) && WORK_STATUSES.includes(req.body.status) ? req.body.status : null;
-  const { rows } = await pool.query(
-    `UPDATE works SET title=$1,type=$2,ref=$3,period=$4,result=$5,kpi=$6,summary=$7,status=COALESCE($8,status)
-     WHERE id=$9 AND user_id=$10 RETURNING *`,
-    [f.title, f.type, f.ref, f.period, f.result, f.kpi, f.summary, status, req.params.id, uid(req)]
-  );
-  if (!rows[0]) return res.status(404).json({ error: 'ไม่พบผลงาน' });
+  const work = await inTx(async db => {
+    const { rows } = await db.query(
+      `UPDATE works SET title=$1,type=$2,ref=$3,period=$4,result=$5,kpi=$6,summary=$7,status=COALESCE($8,status)
+       WHERE id=$9 AND user_id=$10 RETURNING *`,
+      [f.title, f.type, f.ref, f.period, f.result, f.kpi, f.summary, status, req.params.id, uid(req)]
+    );
+    if (!rows[0]) return null;
+    await applyWorkKpis(db, req, rows[0].id);
+    await recomputeKpis(uid(req), db);
+    return rows[0];
+  });
+  if (!work) return res.status(404).json({ error: 'ไม่พบผลงาน' });
   audit(uid(req), 'work_update', req.params.id);
-  res.json(rows[0]);
+  res.json(work);
 }));
 
 app.delete('/api/works/:id', auth, wrap(async (req, res) => {
   const r = await pool.query('DELETE FROM works WHERE id=$1 AND user_id=$2', [req.params.id, uid(req)]);
   if (!r.rowCount) return res.status(404).json({ error: 'ไม่พบผลงาน' });
+  await recomputeKpis(uid(req));
   audit(uid(req), 'work_delete', req.params.id);
   res.json({ ok: true });
 }));
@@ -736,6 +816,70 @@ app.post('/api/users', admin, wrap(async (req, res) => {
   } finally {
     client.release();
   }
+}));
+
+// ---------- Admin: KPI และสมรรถนะของผู้ใช้ ----------
+app.get('/api/users/:id/kpis', admin, wrap(async (req, res) => {
+  const id = +req.params.id;
+  const [k, c, w] = await Promise.all([
+    pool.query('SELECT id,name,source,weight::float,target_value::float,actual_value::float,unit,auto,certified_only,target,actual FROM kpis WHERE user_id=$1 ORDER BY id', [id]),
+    pool.query('SELECT id,grp,name,expected,actual FROM competencies WHERE user_id=$1 ORDER BY id', [id]),
+    pool.query('SELECT id,title,status,kpi FROM works WHERE user_id=$1 ORDER BY created_at DESC, id DESC', [id])
+  ]);
+  res.json({ kpis: k.rows, comps: c.rows, works: w.rows });
+}));
+
+// แทนที่ทั้งชุด: แถวที่มี id อัปเดต, ไม่มี id เพิ่มใหม่, id ที่ไม่ได้ส่งมาถูกลบ
+app.put('/api/users/:id/kpis', admin, wrap(async (req, res) => {
+  const id = +req.params.id;
+  const b = req.body || {};
+  const { rows: u } = await pool.query('SELECT username FROM users WHERE id=$1', [id]);
+  if (!u[0]) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+  const str = (v, max) => String(v ?? '').trim().slice(0, max);
+  const kpis = (Array.isArray(b.kpis) ? b.kpis : []).slice(0, 50).map(k => ({
+    id: +k.id || null, name: str(k.name, 300), source: str(k.source, 300) || null, unit: str(k.unit, 30) || null,
+    weight: num(k.weight), target: num(k.target_value), actual: num(k.actual_value) ?? 0, auto: !!k.auto, certifiedOnly: !!k.certified_only
+  }));
+  const comps = (Array.isArray(b.comps) ? b.comps : []).slice(0, 50).map(c => ({
+    id: +c.id || null, grp: str(c.grp, 100), name: str(c.name, 300), expected: num(c.expected), actual: num(c.actual)
+  }));
+  for (const k of kpis) {
+    if (!k.name) return res.status(400).json({ error: 'กรุณาระบุชื่อตัวชี้วัดทุกแถว' });
+    if (k.weight == null || k.weight < 0 || k.weight > 100) return res.status(400).json({ error: 'น้ำหนักของ "' + k.name + '" ต้องเป็น 0–100' });
+    if (k.target == null || k.target <= 0) return res.status(400).json({ error: 'เป้าหมายของ "' + k.name + '" ต้องเป็นตัวเลขมากกว่า 0' });
+  }
+  for (const c of comps) {
+    if (!c.name || !c.grp) return res.status(400).json({ error: 'กรุณาระบุกลุ่มและชื่อสมรรถนะทุกแถว' });
+    if (![c.expected, c.actual].every(v => Number.isInteger(v) && v >= 0 && v <= 5)) return res.status(400).json({ error: 'ระดับสมรรถนะของ "' + c.name + '" ต้องเป็นจำนวนเต็ม 0–5' });
+  }
+  await inTx(async db => {
+    // ผลงานที่เชื่อม KPI ไว้ก่อนแก้ — ชื่อ KPI ที่แสดงในผลงานต้องสร้างใหม่หลังเปลี่ยนชื่อ/ลบ
+    const { rows: linked } = await db.query('SELECT DISTINCT wk.work_id FROM work_kpis wk JOIN kpis k ON k.id = wk.kpi_id WHERE k.user_id=$1', [id]);
+    await db.query('DELETE FROM kpis WHERE user_id=$1 AND NOT (id = ANY($2::int[]))', [id, kpis.filter(k => k.id).map(k => k.id)]);
+    for (const k of kpis) {
+      const v = [k.name, k.source, k.weight, k.target, k.actual, k.unit, k.auto, k.certifiedOnly];
+      const r = k.id ? await db.query(
+        'UPDATE kpis SET name=$1,source=$2,weight=$3,target_value=$4,actual_value=$5,unit=$6,auto=$7,certified_only=$8 WHERE id=$9 AND user_id=$10', [...v, k.id, id]) : { rowCount: 0 };
+      if (!r.rowCount) await db.query(
+        'INSERT INTO kpis(user_id,name,source,weight,target_value,actual_value,unit,auto,certified_only) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)', [id, ...v]);
+    }
+    await db.query('DELETE FROM competencies WHERE user_id=$1 AND NOT (id = ANY($2::int[]))', [id, comps.filter(c => c.id).map(c => c.id)]);
+    for (const c of comps) {
+      const v = [c.grp, c.name, c.expected, c.actual];
+      const r = c.id ? await db.query('UPDATE competencies SET grp=$1,name=$2,expected=$3,actual=$4 WHERE id=$5 AND user_id=$6', [...v, c.id, id]) : { rowCount: 0 };
+      if (!r.rowCount) await db.query('INSERT INTO competencies(user_id,grp,name,expected,actual) VALUES($1,$2,$3,$4,$5)', [id, ...v]);
+    }
+    // สถานะการรับรองผลงานของผู้ใช้ (ผู้ดูแลตรวจแล้วเปลี่ยนสถานะ) — มีผลกับ KPI ที่นับเฉพาะผลงานที่รับรองแล้ว
+    for (const x of (Array.isArray(b.works) ? b.works : []).slice(0, 500)) {
+      if (WORK_STATUSES.includes(x && x.status)) await db.query('UPDATE works SET status=$1 WHERE id=$2 AND user_id=$3', [x.status, +x.id, id]);
+    }
+    await db.query(
+      `UPDATE works w SET kpi = (SELECT string_agg(k.name, ', ' ORDER BY k.id) FROM work_kpis wk JOIN kpis k ON k.id = wk.kpi_id WHERE wk.work_id = w.id)
+        WHERE w.id = ANY($1::int[])`, [linked.map(r => r.work_id)]);
+    await recomputeKpis(id, db);
+  });
+  audit(uid(req), 'kpi_update', u[0].username + ' kpis=' + kpis.length + ' comps=' + comps.length);
+  res.json({ ok: true });
 }));
 
 // Log a user out everywhere (after role change, password reset or deletion)

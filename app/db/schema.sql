@@ -78,3 +78,24 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 CREATE INDEX IF NOT EXISTS works_user_idx    ON works(user_id);
 CREATE INDEX IF NOT EXISTS evidence_user_idx ON evidence(user_id);
+
+-- KPI แบบตัวเลข: target_value/actual_value/unit ใช้คำนวณ pct/score (target/actual TEXT เป็นค่าที่แสดงผล)
+-- auto = คำนวณ actual จากผลงานที่เชื่อมโยง (work_kpis) — certified_only = นับเฉพาะผลงาน 'รับรองแล้ว'
+ALTER TABLE kpis ADD COLUMN IF NOT EXISTS target_value NUMERIC;
+ALTER TABLE kpis ADD COLUMN IF NOT EXISTS actual_value NUMERIC;
+ALTER TABLE kpis ADD COLUMN IF NOT EXISTS unit TEXT;
+ALTER TABLE kpis ADD COLUMN IF NOT EXISTS auto BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE kpis ADD COLUMN IF NOT EXISTS certified_only BOOLEAN NOT NULL DEFAULT false;
+UPDATE kpis SET target_value = substring(replace(target, ',', '') from '[0-9]+(?:\.[0-9]+)?')::numeric,
+                actual_value = COALESCE(substring(replace(actual, ',', '') from '[0-9]+(?:\.[0-9]+)?')::numeric, 0),
+                unit = NULLIF(trim(regexp_replace(target, '[0-9.,]+', '')), '')
+ WHERE target_value IS NULL AND target ~ '[0-9]';
+
+CREATE TABLE IF NOT EXISTS work_kpis (
+  work_id INT NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+  kpi_id  INT NOT NULL REFERENCES kpis(id) ON DELETE CASCADE,
+  value   NUMERIC NOT NULL DEFAULT 1,
+  PRIMARY KEY (work_id, kpi_id)
+);
+CREATE INDEX IF NOT EXISTS work_kpis_kpi_idx ON work_kpis(kpi_id);
+CREATE INDEX IF NOT EXISTS kpis_user_idx ON kpis(user_id);

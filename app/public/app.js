@@ -418,7 +418,7 @@ ${pageHead('KPI และสมรรถนะ', 'รอบการประเ
     ${d.kpis.length ? '' : '<div style="padding:28px 20px;text-align:center;color:#8A7F81;font-size:13.5px">ยังไม่มีข้อมูลตัวชี้วัด</div>'}
     ${d.kpis.map(k => `
     <div style="display:grid;${cols};gap:12px;padding:14px 20px;border-bottom:1px solid #F3EEEC;align-items:center;font-size:13.5px">
-      <div><div style="font-weight:500">${esc(k.name)}</div><div style="font-size:12px;color:#8A7F81;margin-top:2px">${esc(k.source || '')}</div></div>
+      <div><div style="font-weight:500">${esc(k.name)}</div><div style="font-size:12px;color:#8A7F81;margin-top:2px">${esc(k.source || '')}${k.auto ? ' <span style="color:#1E6B3A">· คำนวณจากผลงาน' + (k.certified_only ? 'ที่รับรองแล้ว' : '') + '</span>' : ''}</div></div>
       <div>${k.weight}%</div><div>${esc(k.target)}</div><div style="font-weight:600">${esc(k.actual)}</div>
       <div style="display:flex;gap:8px;align-items:center"><div style="flex:1;height:6px;background:#F1EAE8;border-radius:6px;overflow:hidden"><div style="height:100%;width:${Math.min(100, k.pct)}%;background:${k.pct >= 100 ? '#1E6B3A' : '#B8913A'}"></div></div><span style="font-size:12px;color:#6B6264;width:38px">${k.pct}%</span></div>
       <div style="font-weight:700;color:#7B1E2B">${k.score.toFixed(2)}</div>
@@ -612,7 +612,7 @@ ${pageHead('จัดการผู้ใช้', 'บัญชีบุคล�
     <div style="color:#5A5052">${esc((u.position || '-') + (u.level || ''))}<div style="font-size:12px;color:#8A7F81">${esc(u.group_name || '')}</div></div>
     <div>${u.role === 'admin' ? '<span style="font-size:12px;font-weight:600;background:#4A0F18;color:#F1D9A0;padding:2px 9px;border-radius:20px">ผู้ดูแลระบบ</span>' : '<span style="font-size:12px;padding:2px 9px;border-radius:20px;background:#F4F1EF;color:#5A5052">บุคลากร</span>'}</div>
     <div>${u.works}${u.locked ? ' <i class="bi bi-lock-fill" title="ถูกหน่วงการเข้าสู่ระบบ" style="color:#B3261E"></i>' : ''}</div>
-    <div style="display:flex;gap:2px"><button class="icon-btn" data-act="editUser" data-id="${u.id}" title="แก้ไข"><i class="bi bi-pencil"></i></button>${u.id === S.data.user.id ? '' : `<button class="icon-btn" data-act="delUser" data-id="${u.id}" title="ลบ"><i class="bi bi-trash3"></i></button>`}</div>
+    <div style="display:flex;gap:2px"><button class="icon-btn" data-act="editKpi" data-id="${u.id}" title="KPI และสมรรถนะ"><i class="bi bi-graph-up-arrow"></i></button><button class="icon-btn" data-act="editUser" data-id="${u.id}" title="แก้ไข"><i class="bi bi-pencil"></i></button>${u.id === S.data.user.id ? '' : `<button class="icon-btn" data-act="delUser" data-id="${u.id}" title="ลบ"><i class="bi bi-trash3"></i></button>`}</div>
   </div>`).join('')}
 </div></div>`;
 }
@@ -893,6 +893,77 @@ function viewChat() {
 }
 
 // ---------------- form modals ----------------
+// เลือก KPI ที่ผลงานนี้สนับสนุน — KPI แบบคำนวณอัตโนมัติรับ "ค่าที่ผลงานนี้ทำได้" (เช่น จำนวนคน) ไปรวมเป็นผลงานของ KPI
+function workKpiPicker(w) {
+  const links = new Map((w.kpi_links || []).map(l => [l.kpi_id, l.value]));
+  return `
+      <fieldset style="border:1px solid #EFE8E6;border-radius:12px;padding:10px 14px 12px;margin:0;display:flex;flex-direction:column;gap:8px">
+        <legend style="font-size:13px;color:#5A5052;padding:0 6px">ตัวชี้วัดที่เชื่อมโยง</legend>
+        ${S.data.kpis.map(k => `
+        <div style="display:flex;gap:10px;align-items:center;font-size:13.5px;flex-wrap:wrap">
+          <label style="display:flex;gap:8px;align-items:flex-start;flex:1;min-width:200px"><input type="checkbox" name="kpi_ck" value="${k.id}" ${links.has(k.id) ? 'checked' : ''} style="margin-top:3px"><span>${esc(k.name)}${k.auto ? ' <span style="font-size:11px;color:#1E6B3A;background:#E6F2EA;padding:1px 7px;border-radius:10px;white-space:nowrap">นับอัตโนมัติ</span>' : ''}</span></label>
+          ${k.auto ? `<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;color:#6B6264">ผลที่ได้<input name="kpi_val_${k.id}" type="number" min="0" step="any" value="${links.has(k.id) ? links.get(k.id) : 1}" style="width:90px;padding:5px 8px;border:1px solid #E6DEDC;border-radius:8px">${esc(k.unit || '')}</label>` : ''}
+        </div>`).join('')}
+        <div style="font-size:12px;color:#8A7F81">KPI ที่ "นับอัตโนมัติ" จะรวมผลที่ได้จากทุกผลงานที่เชื่อมไว้เป็นผลงานของตัวชี้วัด</div>
+      </fieldset>`;
+}
+
+// ผู้ดูแลแก้ KPI/สมรรถนะ/สถานะผลงานของบุคลากร — ค่าที่พิมพ์เก็บใน S.kpiEdit ผ่าน data-k="kpis.0.name"
+function syncKpiEdit() {
+  document.querySelectorAll('[data-k]').forEach(el => {
+    const [list, i, f] = el.dataset.k.split('.');
+    const row = S.kpiEdit[list][+i];
+    if (row) row[f] = el.type === 'checkbox' ? el.checked : el.value;
+  });
+}
+function kpiAdminBody() {
+  const e = S.kpiEdit;
+  const inp = (k, v, extra = '') => `<input data-k="${k}" value="${esc(v == null ? '' : v)}" ${extra} style="width:100%;min-width:0;padding:6px 8px;border:1px solid #E6DEDC;border-radius:8px;font-size:13px">`;
+  const sec = t => `<div style="font-weight:600;font-size:14px;color:#7B1E2B;margin-top:4px">${t}</div>`;
+  const wsum = e.kpis.reduce((a, k) => a + (+k.weight || 0), 0);
+  const kc = 'grid-template-columns:minmax(0,2.4fr) minmax(0,1.4fr) 64px 80px 64px 80px 30px';
+  const cc = 'grid-template-columns:minmax(0,1fr) minmax(0,2.4fr) 80px 80px 30px';
+  const lvl = (k, v) => `<select data-k="${k}" style="width:100%;padding:6px;border:1px solid #E6DEDC;border-radius:8px">${[0, 1, 2, 3, 4, 5].map(n => `<option ${+v === n ? 'selected' : ''}>${n}</option>`).join('')}</select>`;
+  return `
+    ${sec('ตัวชี้วัด (KPI)')}
+    <div class="table-wrap"><div class="table-min" style="min-width:640px;display:flex;flex-direction:column;gap:8px">
+      <div style="display:grid;${kc};gap:8px;font-size:12px;color:#6B6264;font-weight:600"><div>ชื่อตัวชี้วัด</div><div>แหล่งข้อมูล</div><div>น้ำหนัก %</div><div>เป้าหมาย</div><div>หน่วย</div><div>ผลงาน</div><div></div></div>
+      ${e.kpis.map((k, i) => `
+      <div style="border-bottom:1px dashed #EFE8E6;padding-bottom:8px">
+        <div style="display:grid;${kc};gap:8px;align-items:center">
+          ${inp(`kpis.${i}.name`, k.name)}${inp(`kpis.${i}.source`, k.source)}${inp(`kpis.${i}.weight`, k.weight, 'type="number" min="0" max="100" step="any"')}
+          ${inp(`kpis.${i}.target_value`, k.target_value, 'type="number" min="0" step="any"')}${inp(`kpis.${i}.unit`, k.unit, 'placeholder="%, คน"')}
+          ${k.auto ? `<div style="font-size:12.5px;color:#1E6B3A" title="คำนวณจากผลงานที่เชื่อมโยง">${esc(k.actual_value == null ? '-' : k.actual_value)}</div>` : inp(`kpis.${i}.actual_value`, k.actual_value, 'type="number" min="0" step="any"')}
+          <button type="button" class="icon-btn" data-act="kpiRow" data-v="kpis.${i}" title="ลบ"><i class="bi bi-trash3"></i></button>
+        </div>
+        <div style="display:flex;gap:16px;font-size:12.5px;color:#5A5052;margin-top:6px;flex-wrap:wrap">
+          <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-k="kpis.${i}.auto"${k.auto ? 'checked' : ''}> คำนวณผลงานอัตโนมัติจากผลงานที่เชื่อมโยง</label>
+          ${k.auto ? `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-k="kpis.${i}.certified_only" ${k.certified_only ? 'checked' : ''}> นับเฉพาะผลงานที่รับรองแล้ว</label>` : ''}
+        </div>
+      </div>`).join('') || '<div style="font-size:13px;color:#8A7F81">ยังไม่มีตัวชี้วัด</div>'}
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn btn-outline" data-act="kpiRow" data-v="kpis.add"><i class="bi bi-plus-lg"></i>เพิ่มตัวชี้วัด</button>
+        <span style="font-size:12.5px;color:${e.kpis.length && Math.round(wsum) !== 100 ? '#B3261E' : '#6B6264'}">น้ำหนักรวม ${Math.round(wsum * 100) / 100}%${e.kpis.length && Math.round(wsum) !== 100 ? ' (ควรเป็น 100%)' : ''}</span>
+      </div>
+    </div></div>
+    ${sec('สมรรถนะ (ระดับ 0–5)')}
+    <div class="table-wrap"><div class="table-min" style="min-width:480px;display:flex;flex-direction:column;gap:8px">
+      <div style="display:grid;${cc};gap:8px;font-size:12px;color:#6B6264;font-weight:600"><div>กลุ่ม</div><div>สมรรถนะ</div><div>คาดหวัง</div><div>ประเมินได้</div><div></div></div>
+      ${e.comps.map((c, i) => `
+      <div style="display:grid;${cc};gap:8px;align-items:center">
+        ${inp(`comps.${i}.grp`, c.grp, 'placeholder="หลัก / ตำแหน่ง"')}${inp(`comps.${i}.name`, c.name)}${lvl(`comps.${i}.expected`, c.expected)}${lvl(`comps.${i}.actual`, c.actual)}
+        <button type="button" class="icon-btn" data-act="kpiRow" data-v="comps.${i}" title="ลบ"><i class="bi bi-trash3"></i></button>
+      </div>`).join('') || '<div style="font-size:13px;color:#8A7F81">ยังไม่มีสมรรถนะ</div>'}
+      <button type="button" class="btn btn-outline" data-act="kpiRow" data-v="comps.add" style="align-self:flex-start"><i class="bi bi-plus-lg"></i>เพิ่มสมรรถนะ</button>
+    </div></div>
+    ${sec('รับรองผลงาน')}
+    ${e.works.map((w, i) => `
+    <div style="display:flex;gap:10px;align-items:center;font-size:13px">
+      <div style="flex:1;min-width:0"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(w.title)}</div>${w.kpi ? `<div style="font-size:11.5px;color:#8A7F81">${esc(w.kpi)}</div>` : ''}</div>
+      <select data-k="works.${i}.status" style="padding:5px 8px;border:1px solid #E6DEDC;border-radius:8px;font-size:12.5px">${WORK_STATUSES.map(s => `<option ${s === w.status ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>
+    </div>`).join('') || '<div style="font-size:13px;color:#8A7F81">ยังไม่มีผลงาน</div>'}`;
+}
+
 function viewModal() {
   const m = S.modal;
   if (!m) return '';
@@ -910,7 +981,7 @@ function viewModal() {
       </div>
       <label class="field">ผู้มอบหมาย / เอกสารอ้างอิง<input name="ref" value="${esc(w.ref)}" placeholder="คำสั่ง สอศ. ที่ …/2569"></label>
       <label class="field">ผลผลิต / ผลลัพธ์<textarea name="result" rows="2">${esc(w.result)}</textarea></label>
-      <label class="field">ตัวชี้วัดที่เชื่อมโยง<input name="kpi" value="${esc(w.kpi)}" placeholder="KPI 1, 2"></label>
+      ${S.data.kpis.length ? workKpiPicker(w) : `<label class="field">ตัวชี้วัดที่เชื่อมโยง<input name="kpi" value="${esc(w.kpi)}" placeholder="KPI 1, 2"></label>`}
       <label class="field">สรุปผลการปฏิบัติงาน<textarea name="summary" rows="4">${esc(w.summary)}</textarea></label>
       ${isAdmin() && m.id ? `<label class="field">สถานะ (ผู้ดูแลระบบ)<select name="status">${opt(WORK_STATUSES, w.status)}</select></label>` : ''}`;
   } else if (m.type === 'evidence') {
@@ -966,6 +1037,9 @@ function viewModal() {
       <label class="field">ผู้บังคับบัญชา<input name="supervisor" value="${esc(x.supervisor)}"></label>
       <label class="field">หน้าที่ความรับผิดชอบหลัก (บรรทัดละ 1 ข้อ)<textarea name="duties" rows="4">${esc(x.duties)}</textarea></label>
       <div style="font-size:12px;color:#8A7F81">การเปลี่ยนบทบาทหรือรหัสผ่านจะทำให้ผู้ใช้นั้นต้องเข้าสู่ระบบใหม่</div>`;
+  } else if (m.type === 'kpiAdmin') {
+    title = 'KPI และสมรรถนะ — ' + esc(S.kpiEdit.name);
+    body = kpiAdminBody();
   } else if (m.type === 'user') {
     title = 'เพิ่มผู้ใช้';
     body = `
@@ -983,7 +1057,7 @@ function viewModal() {
   }
   return `
 <div data-act="closeModal" data-self="1" style="position:fixed;inset:0;z-index:70;background:rgba(26,6,10,.5);display:flex;align-items:center;justify-content:center;padding:16px">
-  <form data-form="${form}" role="dialog" aria-modal="true" style="width:100%;max-width:560px;max-height:92vh;overflow:auto;background:#fff;border-radius:16px;box-shadow:0 30px 80px rgba(0,0,0,.35)">
+  <form data-form="${form}" role="dialog" aria-modal="true" style="width:100%;max-width:${m.type === 'kpiAdmin' ? 900 : 560}px;max-height:92vh;overflow:auto;background:#fff;border-radius:16px;box-shadow:0 30px 80px rgba(0,0,0,.35)">
     <div style="padding:18px 22px;border-bottom:1px solid #EFE8E6;display:flex;align-items:center;gap:10px;position:sticky;top:0;background:#fff;z-index:1"><div style="flex:1;font-weight:700;font-size:16px">${title}</div><button type="button" data-act="closeModal" class="icon-btn" aria-label="ปิด"><i class="bi bi-x-lg"></i></button></div>
     <div style="padding:20px 22px;display:flex;flex-direction:column;gap:14px">${body}
       ${S.formErr ? `<div style="font-size:13px;color:#C42838">${esc(S.formErr)}</div>` : ''}
@@ -1194,6 +1268,21 @@ const A = {
   editWork: el => set({ modal: { type: 'work', id: +el.dataset.id }, formErr: '' }),
   uploadFor: el => set({ modal: { type: 'evidence', workId: +el.dataset.id }, formErr: '', pendingFiles: [] }),
   editUser: el => set({ modal: { type: 'userEdit', id: +el.dataset.id }, formErr: '' }),
+  editKpi: async el => {
+    const id = +el.dataset.id;
+    try {
+      const r = await api('/api/users/' + id + '/kpis');
+      S.kpiEdit = { id, name: ((S.users || []).find(u => u.id === id) || {}).name || '', ...r };
+      set({ modal: { type: 'kpiAdmin' }, formErr: '' });
+    } catch (e) { toast(e.message); }
+  },
+  kpiRow: el => {
+    syncKpiEdit();
+    const [list, i] = el.dataset.v.split('.');
+    if (i === 'add') S.kpiEdit[list].push(list === 'kpis' ? { name: '', weight: '', target_value: '', unit: '', actual_value: 0, auto: false } : { grp: '', name: '', expected: 3, actual: 0 });
+    else S.kpiEdit[list].splice(+i, 1);
+    render();
+  },
   delUser: el => {
     const u = (S.users || []).find(v => v.id === +el.dataset.id);
     if (u && confirm('ลบผู้ใช้ “' + u.name + '” (' + u.username + ') ?\nผลงาน หลักฐาน และไฟล์ทั้งหมดของผู้ใช้นี้จะถูกลบถาวร')) {
@@ -1242,8 +1331,19 @@ const FORMS = {
     set({ busy: false });
     if (S.loginErr) { const p = document.getElementById('loginPass'); if (p) p.focus(); }
   },
+  kpiAdmin: async () => {
+    syncKpiEdit();
+    const e = S.kpiEdit;
+    await api('/api/users/' + e.id + '/kpis', { method: 'PUT', body: { kpis: e.kpis, comps: e.comps, works: e.works.map(w => ({ id: w.id, status: w.status })) } });
+    S.users = null;
+    return 'บันทึก KPI และสมรรถนะแล้ว';
+  },
   work: async fd => {
     const body = Object.fromEntries(fd.entries());
+    if (S.data.kpis.length) {
+      body.kpi_links = fd.getAll('kpi_ck').map(id => ({ kpi_id: +id, value: fd.get('kpi_val_' + id) }));
+      Object.keys(body).forEach(k => { if (k.startsWith('kpi_val_') || k === 'kpi_ck') delete body[k]; });
+    }
     const id = S.modal.id;
     await api(id ? '/api/works/' + id : '/api/works', { method: id ? 'PUT' : 'POST', body });
     return id ? 'บันทึกการแก้ไขแล้ว' : 'เพิ่มผลงานแล้ว';
@@ -1320,6 +1420,7 @@ document.addEventListener('input', e => {
 
 document.addEventListener('change', e => {
   const el = e.target;
+  if (el.dataset && /^kpis\.\d+\.auto$/.test(el.dataset.k || '')) { syncKpiEdit(); render(); return; }
   if (el.id === 'fileInput') { S.pendingFiles.push(...el.files); render(); return; }
   if (el.dataset && el.dataset.change === 'evWork') {
     const ev = S.data.evidence.find(x => x.id === +el.dataset.id);
