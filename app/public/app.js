@@ -30,7 +30,7 @@ const TYPES = ['โครงการ', 'งานประจำ', 'วิช�
 const WORK_STATUSES = ['รอตรวจสอบ', 'กำลังดำเนินการ', 'รอหลักฐาน', 'รับรองแล้ว'];
 const TYPE_ICON = { 'โครงการ': 'bi bi-kanban', 'งานประจำ': 'bi bi-briefcase', 'วิชาการ': 'bi bi-mortarboard', 'ยุทธศาสตร์': 'bi bi-bullseye', 'บริการ': 'bi bi-headset', 'เร่งด่วน': 'bi bi-lightning' };
 const EV_ICON = { PDF: 'bi bi-file-earmark-pdf', DOCX: 'bi bi-file-earmark-word', XLSX: 'bi bi-file-earmark-spreadsheet', 'ภาพ': 'bi bi-images', URL: 'bi bi-link-45deg', 'วิดีโอ': 'bi bi-camera-video' };
-const PAGE_TITLES = { dashboard: 'แดชบอร์ด', works: 'ผลงานและโครงการ', evidence: 'หลักฐาน', kpi: 'KPI และสมรรถนะ', settings: 'ตั้งค่าผู้ช่วย AI', users: 'จัดการผู้ใช้', security: 'ความปลอดภัย' };
+const PAGE_TITLES = { dashboard: 'แดชบอร์ด', works: 'ผลงานและโครงการ', evidence: 'หลักฐาน', kpi: 'KPI และสมรรถนะ', settings: 'ตั้งค่าผู้ช่วย AI', period: 'รอบการประเมิน', users: 'จัดการผู้ใช้', security: 'ความปลอดภัย' };
 
 // ---------------- state ----------------
 const greet = () => ({ role: 'bot', text: 'สวัสดีครับ ผมจะช่วยสัมภาษณ์เพื่อบันทึกผลงานเข้าแฟ้ม 8 คำถามสั้น ๆ ตอบด้วยการพิมพ์หรือกดไมค์พูดได้เลย\n\n1/8 ' + QUESTIONS[0].q });
@@ -83,6 +83,10 @@ const pad2 = n => String(n).padStart(2, '0');
 const stOf = s => ST[s] || ST['รอตรวจสอบ'];
 const withSt = w => { const c = stOf(w.status); return { ...w, stBg: c[0], stFg: c[1], stIcon: c[2], icon: TYPE_ICON[w.type] || 'bi bi-file-text' }; };
 const isAdmin = () => S.me && S.me.role === 'admin';
+// รอบการประเมิน/ปีงบประมาณที่ผู้ดูแลกำหนด (มาจาก /api/portfolio)
+const PER = () => (S.data && S.data.period) || { fiscalYear: '', round: '', start: '', end: '' };
+const thDate = iso => iso ? new Date(iso + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
+const periodRange = () => thDate(PER().start) + ' – ' + thDate(PER().end);
 
 let CSRF_TOKEN = '';
 async function ensureCsrfToken() {
@@ -206,14 +210,14 @@ function viewLogin() {
 function viewAdmin(D) {
   const pending = S.data.evidence.filter(e => e.status === 'รอตรวจสอบ').length;
   const nav = [['dashboard', 'แดชบอร์ด', 'bi bi-speedometer2'], ['works', 'ผลงานและโครงการ', 'bi bi-kanban', D.n], ['evidence', 'หลักฐาน', 'bi bi-folder2-open', pending], ['kpi', 'KPI และสมรรถนะ', 'bi bi-graph-up-arrow']];
-  if (isAdmin()) nav.push(['settings', 'ตั้งค่าผู้ช่วย AI', 'bi bi-cpu'], ['users', 'จัดการผู้ใช้', 'bi bi-people'], ['security', 'ความปลอดภัย', 'bi bi-shield-check']);
+  if (isAdmin()) nav.push(['period', 'รอบการประเมิน', 'bi bi-calendar3'], ['settings', 'ตั้งค่าผู้ช่วย AI', 'bi bi-cpu'], ['users', 'จัดการผู้ใช้', 'bi bi-people'], ['security', 'ความปลอดภัย', 'bi bi-shield-check']);
   const ai = S.data.ai;
   const P = PROVIDERS[ai.provider] || PROVIDERS.custom;
   const aiText = ai.ready ? 'เชื่อมต่อ ' + P.label + ' · ' + ai.model : isAdmin() ? 'ยังไม่เชื่อมต่อ API — ตั้งค่าได้ที่เมนู “ตั้งค่าผู้ช่วย AI”' : 'ผู้ดูแลระบบยังไม่เปิดการเชื่อมต่อ · โหมดสัมภาษณ์ใช้งานได้ทันที';
   const u = S.data.user;
   // "นางสาวพิมพ์ชนก วงศ์ประเสริฐ" -> "พว" (first letter of first name + surname)
   const initials = (u.name || '').replace(/^(นางสาว|นาง|นาย|ดร\.)\s*/, '').split(/\s+/).slice(0, 2).map(p => p[0] || '').join('');
-  const page = { dashboard: pageDashboard, works: pageWorks, evidence: pageEvidence, kpi: pageKpi, settings: pageSettings, users: pageUsers, security: pageSecurity }[S.page] || pageDashboard;
+  const page = { dashboard: pageDashboard, works: pageWorks, evidence: pageEvidence, kpi: pageKpi, settings: pageSettings, period: pagePeriod, users: pageUsers, security: pageSecurity }[S.page] || pageDashboard;
   return `
 <div class="layout">
   ${S.sideOpen ? '<div data-act="side" style="position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:39"></div>' : ''}
@@ -250,7 +254,7 @@ function viewAdmin(D) {
       <div class="hide-sm" style="font-size:13px;color:#8A7F81;display:flex;gap:8px;align-items:center;white-space:nowrap"><i class="bi bi-house-door"></i><span>หน้าหลัก</span><i class="bi bi-chevron-right" style="font-size:10px"></i><span style="color:#1F1A1B;font-weight:600">${PAGE_TITLES[S.page]}</span></div>
       <div style="flex:1;min-width:0"></div>
       <div style="display:flex;align-items:center;gap:8px;border:1px solid #E6DEDC;border-radius:8px;padding:7px 12px;flex:0 1 240px;min-width:44px;overflow:hidden;color:#8A7F81;font-size:13px"><i class="bi bi-search"></i><input id="search" data-bind="search" data-rerender="1" value="${esc(S.search)}" placeholder="ค้นหาผลงาน หลักฐาน KPI…" style="border:0;outline:0;flex:1;min-width:0;width:100%;font-size:13px;background:transparent"></div>
-      <div class="hide-sm" style="font-size:13px;border:1px solid #E6DEDC;border-radius:8px;padding:7px 12px;display:flex;gap:6px;align-items:center;white-space:nowrap;flex-shrink:0"><i class="bi bi-calendar3" style="color:#7B1E2B"></i>ปีงบ 2569</div>
+      <div class="hide-sm" style="font-size:13px;border:1px solid #E6DEDC;border-radius:8px;padding:7px 12px;display:flex;gap:6px;align-items:center;white-space:nowrap;flex-shrink:0"><i class="bi bi-calendar3" style="color:#7B1E2B"></i>ปีงบ ${esc(PER().fiscalYear)}</div>
       <span class="hide-sm" style="font-size:12px;padding:5px 10px;border-radius:6px;background:#F4F1EF;color:#7B1E2B;font-weight:600;white-space:nowrap">${isAdmin() ? 'ผู้ดูแลระบบ' : 'บุคลากร'}</span>
       <div style="display:flex;gap:6px;align-items:center;padding-left:8px;border-left:1px solid #E6DEDC">
         <button data-act="modal" data-v="profile" title="${esc(u.name)} — แก้ไขข้อมูลส่วนตัว" style="width:36px;height:36px;border-radius:50%;background:#F6ECEC;color:#7B1E2B;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0">${esc(initials)}</button>
@@ -259,7 +263,7 @@ function viewAdmin(D) {
     </header>
     <div class="page-pad" style="padding:28px;display:flex;flex-direction:column;gap:22px;max-width:1360px;width:100%">
       ${page(D)}
-      <div style="font-size:12px;color:#A59A9C;padding-top:8px">© 2569 สำนักพัฒนาสมรรถนะครูและบุคลากรอาชีวศึกษา สำนักงานคณะกรรมการการอาชีวศึกษา</div>
+      <div style="font-size:12px;color:#A59A9C;padding-top:8px">© ${new Date().getFullYear() + 543} สำนักพัฒนาสมรรถนะครูและบุคลากรอาชีวศึกษา สำนักงานคณะกรรมการการอาชีวศึกษา</div>
     </div>
   </main>
 </div>`;
@@ -345,7 +349,7 @@ function pageWorks(D) {
   const list = D.works.filter(w => (S.typeFilter === 'ทั้งหมด' || w.type === S.typeFilter) && (!q || (w.title + (w.ref || '') + (w.result || '')).includes(q)));
   const cols = 'grid-template-columns:48px minmax(0,3fr) 120px minmax(0,1.4fr) 80px 130px 70px';
   return `
-${pageHead('ผลงานและโครงการ', 'งานประจำ งานนโยบาย งานโครงการ และงานมอบหมายพิเศษ ปีงบประมาณ 2569', `
+${pageHead('ผลงานและโครงการ', 'งานประจำ งานนโยบาย งานโครงการ และงานมอบหมายพิเศษ ปีงบประมาณ ' + esc(PER().fiscalYear), `
   <button data-act="modal" data-v="work" class="btn btn-outline"><i class="bi bi-pencil-square"></i>เพิ่มผลงานเอง</button>`)}
 <div style="display:flex;gap:8px;flex-wrap:wrap">${chipRow(['ทั้งหมด', ...TYPES], S.typeFilter, 'typeFilter')}</div>
 <div style="${card};overflow:hidden" class="table-wrap">
@@ -409,7 +413,7 @@ function pageKpi(D) {
   const d = S.data;
   const cols = 'grid-template-columns:minmax(0,2.6fr) 70px 90px 90px minmax(0,1.4fr) 70px';
   return `
-${pageHead('KPI และสมรรถนะ', 'รอบการประเมินที่ 1–2 ปีงบประมาณ 2569')}
+${pageHead('KPI และสมรรถนะ', esc(PER().round + ' ปีงบประมาณ ' + PER().fiscalYear + ' (' + periodRange() + ')'))}
 <div style="${card};overflow:hidden" class="table-wrap">
   <div class="table-min" style="min-width:720px">
     <div style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #EFE8E6"><div style="font-weight:600;font-size:15px">ผลสัมฤทธิ์ตามตัวชี้วัด</div><div style="font-size:13px">คะแนนถ่วงน้ำหนัก <b style="color:#7B1E2B;font-size:16px">${D.kpiScore}</b> / 5.00</div></div>
@@ -438,6 +442,30 @@ ${pageHead('KPI และสมรรถนะ', 'รอบการประเ
 }
 
 // ---------------- page: AI settings (admin) ----------------
+function pagePeriod() {
+  if (!isAdmin()) return '';
+  const p = PER();
+  const y = +p.fiscalYear || new Date().getFullYear() + 543;
+  const presets = [[1, 'รอบที่ 1', '10-01', '03-31', -1, 0], [2, 'รอบที่ 2', '04-01', '09-30', 0, 0], [0, 'ทั้งปีงบประมาณ', '10-01', '09-30', -1, 0]];
+  return `
+${pageHead('รอบการประเมิน', 'กำหนดปีงบประมาณและช่วงเวลาการประเมิน — มีผลกับการแสดงผลของผู้ใช้ทุกคน')}
+<form data-form="period" style="${card};padding:22px;display:flex;flex-direction:column;gap:16px;max-width:640px">
+  <div style="display:grid;grid-template-columns:140px 1fr;gap:12px">
+    <label class="field">ปีงบประมาณ (พ.ศ.)<input id="perYear" name="fiscalYear" type="number" min="2500" max="2700" required value="${esc(p.fiscalYear)}"></label>
+    <label class="field">ชื่อรอบการประเมิน<input id="perRound" name="round" required maxlength="100" value="${esc(p.round)}" placeholder="รอบการประเมินที่ 1 (1 ต.ค. – 31 มี.ค.)"></label>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <label class="field">วันเริ่มต้น<input id="perStart" name="start" type="date" required value="${esc(p.start)}"></label>
+    <label class="field">วันสิ้นสุด<input id="perEnd" name="end" type="date" required value="${esc(p.end)}"></label>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span style="font-size:12.5px;color:#6B6264">ตั้งค่าด่วน ปีงบ ${y}:</span>
+    ${presets.map(([n, label, s, e, ys, ye]) => `<button type="button" class="btn btn-outline" style="font-size:12.5px;padding:5px 10px" data-act="perPreset" data-round="${n ? 'รอบการประเมินที่ ' + n : 'ปีงบประมาณ ' + y}" data-start="${y - 543 + ys}-${s}" data-end="${y - 543 + ye}-${e}">${label}</button>`).join('')}
+  </div>
+  <div style="font-size:12.5px;color:#8A7F81">ปัจจุบัน: ${esc(p.round)} ปีงบประมาณ ${esc(p.fiscalYear)} · ${esc(periodRange())}</div>
+  <div><button type="submit" class="btn btn-primary">${S.busy ? 'กำลังบันทึก…' : 'บันทึก'}</button></div>
+</form>`;
+}
+
 function pageSettings() {
   if (!isAdmin()) return '';
   const f = S.aiForm;
@@ -632,7 +660,7 @@ function viewPortfolio(D) {
   const R = 'border-radius:26px';
   let body = '';
   if (S.pfTab === 'overview') {
-    const profileRows = [['ตำแหน่ง', u.position], ['ระดับ', u.level], ['สังกัด', u.group_name], ['ผู้บังคับบัญชา', u.supervisor], ['รอบการประเมิน', '1 ต.ค. 2568 – 30 ก.ย. 2569'], ['แหล่งข้อมูล', 'HR · IDPlan · R-HRD · สารบรรณ']];
+    const profileRows = [['ตำแหน่ง', u.position], ['ระดับ', u.level], ['สังกัด', u.group_name], ['ผู้บังคับบัญชา', u.supervisor], ['รอบการประเมิน', PER().round + ' · ' + periodRange()], ['แหล่งข้อมูล', 'HR · IDPlan · R-HRD · สารบรรณ']];
     body = `
 <div class="pf-grid">
   ${featured ? `
@@ -737,7 +765,7 @@ function viewPortfolio(D) {
     <div class="hero-grid pf-pad" style="position:relative;max-width:1280px;margin:0 auto;padding:44px 32px 36px">
       <div class="hero-photo" style="aspect-ratio:3/4;border-radius:22px;background:rgba(255,255,255,.06);border:1px solid rgba(212,175,90,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#D9B8BC;font-size:13px"><i class="bi bi-person" style="font-size:56px"></i>ภาพถ่ายบุคลากร</div>
       <div style="min-width:0">
-        <div style="display:inline-flex;gap:8px;align-items:center;border:1px solid rgba(212,175,90,.5);color:#F1D9A0;border-radius:20px;padding:5px 14px;font-size:13px;letter-spacing:.5px"><i class="bi bi-journal-richtext"></i>e‑Portfolio · ปีงบประมาณ พ.ศ. 2569</div>
+        <div style="display:inline-flex;gap:8px;align-items:center;border:1px solid rgba(212,175,90,.5);color:#F1D9A0;border-radius:20px;padding:5px 14px;font-size:13px;letter-spacing:.5px"><i class="bi bi-journal-richtext"></i>e‑Portfolio · ปีงบประมาณ พ.ศ. ${esc(PER().fiscalYear)}</div>
         <h1 class="hero-name" style="font-family:'Noto Serif Thai',serif;font-size:52px;line-height:1.2;margin:16px 0 8px;font-weight:700;text-wrap:balance">${esc(u.name)}</h1>
         <div style="font-size:21px;color:#F3E6E7">${esc((u.position || '') + (u.level || ''))}</div>
         <div style="font-size:15px;color:#D9B8BC;margin-top:4px">${esc(u.group_name || '')}</div>
@@ -984,7 +1012,7 @@ function viewModal() {
         <label class="field">ประเภท<select name="type">${opt(TYPES, w.type || 'โครงการ')}</select></label>
         <label class="field">ระยะเวลา<input name="period" value="${esc(w.period)}" placeholder="ต.ค. 68 – มี.ค. 69"></label>
       </div>
-      <label class="field">ผู้มอบหมาย / เอกสารอ้างอิง<input name="ref" value="${esc(w.ref)}" placeholder="คำสั่ง สอศ. ที่ …/2569"></label>
+      <label class="field">ผู้มอบหมาย / เอกสารอ้างอิง<input name="ref" value="${esc(w.ref)}" placeholder="คำสั่ง สอศ. ที่ …/${esc(PER().fiscalYear)}"></label>
       <label class="field">ผลผลิต / ผลลัพธ์<textarea name="result" rows="2">${esc(w.result)}</textarea></label>
       ${S.data.kpis.length ? workKpiPicker(w) : `<label class="field">ตัวชี้วัดที่เชื่อมโยง<input name="kpi" value="${esc(w.kpi)}" placeholder="KPI 1, 2"></label>`}
       <label class="field">สรุปผลการปฏิบัติงาน<textarea name="summary" rows="4">${esc(w.summary)}</textarea></label>
@@ -1333,6 +1361,14 @@ const A = {
   editWork: el => set({ modal: { type: 'work', id: +el.dataset.id }, formErr: '' }),
   uploadFor: el => set({ modal: { type: 'evidence', workId: +el.dataset.id }, formErr: '', pendingFiles: [] }),
   editUser: el => set({ modal: { type: 'userEdit', id: +el.dataset.id }, formErr: '' }),
+  perPreset: el => {
+    // ปีงบอาจถูกแก้ในช่องแต่ยังไม่บันทึก — คำนวณวันจากปีในช่องกรอก
+    const y = +document.getElementById('perYear').value;
+    const shift = v => y ? v.replace(/^\d{4}/, m => String(+m + (y - (+PER().fiscalYear || y)))) : v;
+    document.getElementById('perRound').value = el.dataset.round.replace(/ปีงบประมาณ \d+/, 'ปีงบประมาณ ' + y);
+    document.getElementById('perStart').value = shift(el.dataset.start);
+    document.getElementById('perEnd').value = shift(el.dataset.end);
+  },
   editKpi: async el => {
     const id = +el.dataset.id;
     try {
@@ -1395,6 +1431,10 @@ const FORMS = {
     } catch (e) { S.loginErr = e.message; }
     set({ busy: false });
     if (S.loginErr) { const p = document.getElementById('loginPass'); if (p) p.focus(); }
+  },
+  period: async fd => {
+    await api('/api/settings/period', { method: 'PUT', body: Object.fromEntries(fd.entries()) });
+    return 'บันทึกรอบการประเมินแล้ว';
   },
   kpiAdmin: async () => {
     syncKpiEdit();

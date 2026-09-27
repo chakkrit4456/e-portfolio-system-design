@@ -310,7 +310,7 @@ app.post('/api/password', auth, wrap(async (req, res) => {
 // ---------- Portfolio data (everything the UI needs for the current user) ----------
 app.get('/api/portfolio', auth, wrap(async (req, res) => {
   const id = uid(req);
-  const [u, works, ev, kpis, comps, ai] = await Promise.all([
+  const [u, works, ev, kpis, comps, ai, period] = await Promise.all([
     pool.query('SELECT id,username,name,position,level,group_name,supervisor,role,duties FROM users WHERE id=$1', [id]),
     pool.query(
       `SELECT w.*, (SELECT count(*)::int FROM evidence e WHERE e.work_id=w.id) AS ev,
@@ -320,7 +320,8 @@ app.get('/api/portfolio', auth, wrap(async (req, res) => {
     pool.query('SELECT id,work_id,name,kind,url,file_name,ev_date,status,checker FROM evidence WHERE user_id=$1 ORDER BY id', [id]),
     pool.query('SELECT id,name,source,weight::float,target,actual,pct::float,score::float,unit,auto,certified_only FROM kpis WHERE user_id=$1 ORDER BY id', [id]),
     pool.query('SELECT id,grp,name,expected,actual FROM competencies WHERE user_id=$1 ORDER BY id', [id]),
-    getAi()
+    getAi(),
+    getPeriod()
   ]);
   if (!u.rows[0]) return res.status(401).json({ error: 'ไม่พบผู้ใช้' });
   res.json({
@@ -329,7 +330,8 @@ app.get('/api/portfolio', auth, wrap(async (req, res) => {
     evidence: ev.rows.map(e => ({ ...e, hasFile: !!e.file_name, file_name: undefined })),
     kpis: kpis.rows,
     comps: comps.rows,
-    ai: { ready: aiReady(ai), provider: ai.provider, model: ai.model }
+    ai: { ready: aiReady(ai), provider: ai.provider, model: ai.model },
+    period
   });
 }));
 
@@ -601,6 +603,33 @@ app.get('/files/:id', auth, wrap(async (req, res) => {
   res.sendFile(uploadPath(rows[0].file_name));
 }));
 
+// ---------- รอบการประเมิน / ปีงบประมาณ (ผู้ดูแลกำหนด ใช้แสดงผลทั้งระบบ) ----------
+// ปีงบประมาณไทย: 1 ต.ค. ของปีก่อน – 30 ก.ย. ของปี พ.ศ. นั้น
+function defaultPeriod() {
+  const d = new Date();
+  const fy = d.getFullYear() + 543 + (d.getMonth() >= 9 ? 1 : 0);
+  const ce = fy - 543;
+  return { fiscalYear: fy, round: 'รอบการประเมินที่ 1–2', start: (ce - 1) + '-10-01', end: ce + '-09-30' };
+}
+async function getPeriod() {
+  const { rows } = await pool.query("SELECT value FROM settings WHERE key='period'");
+  return { ...defaultPeriod(), ...(rows[0] ? rows[0].value : {}) };
+}
+app.put('/api/settings/period', admin, wrap(async (req, res) => {
+  const b = req.body || {};
+  const fiscalYear = parseInt(b.fiscalYear, 10);
+  const round = String(b.round || '').trim().slice(0, 100);
+  const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v));
+  if (!(fiscalYear >= 2500 && fiscalYear <= 2700)) return res.status(400).json({ error: 'ปีงบประมาณต้องเป็น พ.ศ. เช่น 2569' });
+  if (!round) return res.status(400).json({ error: 'กรุณาระบุชื่อรอบการประเมิน' });
+  if (!isDate(b.start) || !isDate(b.end)) return res.status(400).json({ error: 'กรุณาระบุวันเริ่มต้นและวันสิ้นสุด' });
+  if (b.start > b.end) return res.status(400).json({ error: 'วันเริ่มต้นต้องไม่เกินวันสิ้นสุด' });
+  const v = { fiscalYear, round, start: b.start, end: b.end };
+  await pool.query("INSERT INTO settings(key,value) VALUES('period',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(v)]);
+  audit(uid(req), 'period_update', fiscalYear + ' ' + round + ' ' + b.start + '..' + b.end);
+  res.json(v);
+}));
+
 // ---------- AI ----------
 app.get('/api/settings/ai', admin, wrap(async (req, res) => {
   const a = await getAi();
@@ -693,13 +722,14 @@ app.get('/api/ai/check', admin, wrap(async (req, res) => {
 }));
 
 async function portfolioContext(id) {
-  const [u, w, k] = await Promise.all([
+  const [u, w, k, period] = await Promise.all([
     pool.query('SELECT name,position,level FROM users WHERE id=$1', [id]),
     pool.query('SELECT title,status FROM works WHERE user_id=$1 ORDER BY id', [id]),
-    pool.query('SELECT name,actual,target FROM kpis WHERE user_id=$1 ORDER BY id', [id])
+    pool.query('SELECT name,actual,target FROM kpis WHERE user_id=$1 ORDER BY id', [id]),
+    getPeriod()
   ]);
   const p = u.rows[0] || {};
-  return 'ข้อมูลแฟ้ม: ผู้จัดทำ ' + p.name + ' ' + (p.position || '') + (p.level || '') + ' ปีงบ 2569. ผลงาน: ' +
+  return 'ข้อมูลแฟ้ม: ผู้จัดทำ ' + p.name + ' ' + (p.position || '') + (p.level || '') + ' ปีงบ ' + period.fiscalYear + ' (' + period.round + ' ' + period.start + ' ถึง ' + period.end + '). ผลงาน: ' +
     w.rows.map(x => x.title + ' [' + x.status + ']').join('; ') + '. KPI: ' +
     k.rows.map(x => x.name + ' ' + x.actual + '/' + x.target).join('; ');
 }
