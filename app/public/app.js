@@ -9,7 +9,7 @@ const QUESTIONS = [
   { k: 'บทบาทและการดำเนินงาน', q: 'ท่านมีบทบาทอย่างไร (ผู้รับผิดชอบหลัก/ร่วม) และดำเนินการอะไรบ้าง', chips: ['ผู้รับผิดชอบหลัก', 'ผู้รับผิดชอบร่วม', 'เลขานุการคณะทำงาน'] },
   { k: 'ผลผลิต/ผลลัพธ์', q: 'ผลผลิตหรือผลลัพธ์ที่ได้คืออะไร ถ้ามีตัวเลขช่วยระบุด้วยครับ', chips: [] },
   { k: 'หลักฐาน', q: 'มีหลักฐานอะไรยืนยันบ้าง กดปุ่ม 📎 เพื่อแนบไฟล์ หรือวางลิงก์ผลงานได้เลย', chips: ['คำสั่ง', 'รายงานสรุปผล', 'รายชื่อผู้เข้าร่วม', 'ภาพกิจกรรม', 'URL ผลงาน'] },
-  { k: 'ตัวชี้วัดที่เกี่ยวข้อง', q: 'งานนี้เชื่อมกับ KPI ข้อใด เลือกจากรายการด้านล่าง (ใส่ผลที่ได้ถ้ามี) แล้วกดส่ง', chips: [] },
+  { k: 'ตัวชี้วัดที่เกี่ยวข้อง', q: 'งานนี้เชื่อมกับ KPI ข้อใด เลือกจากรายการด้านล่างแล้วกดส่ง', chips: [] },
   { k: 'ผู้ตรวจสอบ/ผู้รับรอง', q: 'สุดท้าย ใครเป็นผู้ตรวจสอบและผู้รับรองผลงานนี้', chips: ['ผู้อำนวยการกลุ่ม', 'ผู้อำนวยการสำนัก'] }
 ];
 const ACKS = ['รับทราบครับ', 'ขอบคุณครับ', 'ดีครับ', 'บันทึกไว้แล้วครับ'];
@@ -421,7 +421,7 @@ ${pageHead('KPI และสมรรถนะ', esc(PER().round + ' ปีง�
     ${d.kpis.length ? '' : '<div style="padding:28px 20px;text-align:center;color:#8A7F81;font-size:13.5px">ยังไม่มีข้อมูลตัวชี้วัด</div>'}
     ${d.kpis.map(k => `
     <div style="display:grid;${cols};gap:12px;padding:14px 20px;border-bottom:1px solid #F3EEEC;align-items:center;font-size:13.5px">
-      <div><div style="font-weight:500">${esc(k.name)}</div><div style="font-size:12px;color:#8A7F81;margin-top:2px">${esc(k.source || '')}${k.auto ? ' <span style="color:#1E6B3A">· คำนวณจากผลงาน' + (k.certified_only ? 'ที่รับรองแล้ว' : '') + '</span>' : ''}</div></div>
+      <div><div style="font-weight:500">${esc(k.name)}</div><div style="font-size:12px;color:#8A7F81;margin-top:2px">${esc(k.source || '')}</div></div>
       <div>${k.weight}%</div><div>${esc(k.target)}</div><div style="font-weight:600">${esc(k.actual)}</div>
       <div style="display:flex;gap:8px;align-items:center"><div style="flex:1;height:6px;background:#F1EAE8;border-radius:6px;overflow:hidden"><div style="height:100%;width:${Math.min(100, k.pct)}%;background:${k.pct >= 100 ? '#1E6B3A' : '#B8913A'}"></div></div><span style="font-size:12px;color:#6B6264;width:38px">${k.pct}%</span></div>
       <div style="font-weight:700;color:#7B1E2B">${k.score.toFixed(2)}</div>
@@ -926,18 +926,17 @@ function viewChat() {
 }
 
 // ---------------- form modals ----------------
-// เลือก KPI ที่ผลงานนี้สนับสนุน — KPI แบบคำนวณอัตโนมัติรับ "ค่าที่ผลงานนี้ทำได้" (เช่น จำนวนคน) ไปรวมเป็นผลงานของ KPI
+// เลือก KPI ที่ผลงานนี้สนับสนุน (อ้างอิง — ผลงานของ KPI ผู้ดูแลกรอกเอง)
 function workKpiPicker(w) {
-  const links = new Map((w.kpi_links || []).map(l => [l.kpi_id, l.value]));
+  const links = new Set((w.kpi_links || []).map(l => l.kpi_id));
   return `
       <fieldset style="border:1px solid #EFE8E6;border-radius:12px;padding:10px 14px 12px;margin:0;display:flex;flex-direction:column;gap:8px">
         <legend style="font-size:13px;color:#5A5052;padding:0 6px">ตัวชี้วัดที่เชื่อมโยง</legend>
         ${S.data.kpis.map(k => `
         <div style="display:flex;gap:10px;align-items:center;font-size:13.5px;flex-wrap:wrap">
-          <label style="display:flex;gap:8px;align-items:flex-start;flex:1;min-width:200px"><input type="checkbox" name="kpi_ck" value="${k.id}" ${links.has(k.id) ? 'checked' : ''} style="margin-top:3px"><span>${esc(k.name)}${k.auto ? ' <span style="font-size:11px;color:#1E6B3A;background:#E6F2EA;padding:1px 7px;border-radius:10px;white-space:nowrap">นับอัตโนมัติ</span>' : ''}</span></label>
-          ${k.auto ? `<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;color:#6B6264">ผลที่ได้<input name="kpi_val_${k.id}" type="number" min="0" step="any" value="${links.has(k.id) ? links.get(k.id) : 1}" style="width:90px;padding:5px 8px;border:1px solid #E6DEDC;border-radius:8px">${esc(k.unit || '')}</label>` : ''}
+          <label style="display:flex;gap:8px;align-items:flex-start;flex:1;min-width:200px"><input type="checkbox" name="kpi_ck" value="${k.id}" ${links.has(k.id) ? 'checked' : ''} style="margin-top:3px"><span>${esc(k.name)}</span></label>
         </div>`).join('')}
-        <div style="font-size:12px;color:#8A7F81">KPI ที่ "นับอัตโนมัติ" จะรวมผลที่ได้จากทุกผลงานที่เชื่อมไว้เป็นผลงานของตัวชี้วัด</div>
+        <div style="font-size:12px;color:#8A7F81">ใช้อ้างอิงว่าผลงานนี้สนับสนุนตัวชี้วัดใด — ผลงานของตัวชี้วัดผู้ดูแลระบบเป็นผู้กรอก</div>
       </fieldset>`;
 }
 
@@ -966,12 +965,8 @@ function kpiAdminBody() {
         <div style="display:grid;${kc};gap:8px;align-items:center">
           ${inp(`kpis.${i}.name`, k.name)}${inp(`kpis.${i}.source`, k.source)}${inp(`kpis.${i}.weight`, k.weight, 'type="number" min="0" max="100" step="any"')}
           ${inp(`kpis.${i}.target_value`, k.target_value, 'type="number" min="0" step="any"')}${inp(`kpis.${i}.unit`, k.unit, 'placeholder="%, คน"')}
-          ${k.auto ? `<div style="font-size:12.5px;color:#1E6B3A" title="คำนวณจากผลงานที่เชื่อมโยง">${esc(k.actual_value == null ? '-' : k.actual_value)}</div>` : inp(`kpis.${i}.actual_value`, k.actual_value, 'type="number" min="0" step="any"')}
+          ${inp(`kpis.${i}.actual_value`, k.actual_value, 'type="number" min="0" step="any"')}
           <button type="button" class="icon-btn" data-act="kpiRow" data-v="kpis.${i}" title="ลบ"><i class="bi bi-trash3"></i></button>
-        </div>
-        <div style="display:flex;gap:16px;font-size:12.5px;color:#5A5052;margin-top:6px;flex-wrap:wrap">
-          <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-k="kpis.${i}.auto"${k.auto ? 'checked' : ''}> คำนวณผลงานอัตโนมัติจากผลงานที่เชื่อมโยง</label>
-          ${k.auto ? `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-k="kpis.${i}.certified_only" ${k.certified_only ? 'checked' : ''}> นับเฉพาะผลงานที่รับรองแล้ว</label>` : ''}
         </div>
       </div>`).join('') || '<div style="font-size:13px;color:#8A7F81">ยังไม่มีตัวชี้วัด</div>'}
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
@@ -1173,13 +1168,12 @@ async function aiCreateUsers(i) {
 // ---------------- interview: KPI จริง + แนบหลักฐาน ----------------
 const KPI_Q = QUESTIONS.findIndex(q => q.k === 'ตัวชี้วัดที่เกี่ยวข้อง');
 const EV_Q = QUESTIONS.findIndex(q => q.k === 'หลักฐาน');
-// S.ivKpis = { [kpiId]: ค่าที่ผลงานนี้ทำได้ } — ใช้ค่าเดียวกับฟอร์มผลงาน (kpi_links)
+// S.ivKpis = { [kpiId]: 1 } — KPI ที่ผลงานนี้สนับสนุน (อ้างอิง ไม่นับเป็นคะแนน)
 function ivKpiPicker() {
   return `<div style="font-size:12px;color:#6B6264;margin-bottom:6px">เลือกตัวชี้วัดที่งานนี้สนับสนุน</div>
   <div style="display:flex;flex-direction:column;gap:6px">${S.data.kpis.map(k => { const on = k.id in S.ivKpis; return `
     <div style="display:flex;gap:8px;align-items:center;font-size:12.5px;flex-wrap:wrap">
-      <label style="display:flex;gap:7px;align-items:flex-start;flex:1;min-width:160px;cursor:pointer"><input type="checkbox" data-change="ivKpi" data-id="${k.id}" ${on ? 'checked' : ''} style="margin-top:2px"><span>${esc(k.name)}${k.auto ? ' <span style="font-size:10.5px;color:#1E6B3A;background:#E6F2EA;padding:0 6px;border-radius:10px">นับอัตโนมัติ</span>' : ''}</span></label>
-      ${k.auto && on ? `<label style="display:flex;gap:5px;align-items:center;color:#6B6264">ได้<input type="number" min="0" step="any" data-change="ivKpiVal" data-id="${k.id}" value="${esc(S.ivKpis[k.id])}" style="width:74px;padding:3px 6px;border:1px solid #E6DEDC;border-radius:6px">${esc(k.unit || '')}</label>` : ''}
+      <label style="display:flex;gap:7px;align-items:flex-start;flex:1;min-width:160px;cursor:pointer"><input type="checkbox" data-change="ivKpi" data-id="${k.id}" ${on ? 'checked' : ''} style="margin-top:2px"><span>${esc(k.name)}</span></label>
     </div>`; }).join('')}</div>`;
 }
 const ivKpiNames = () => S.data.kpis.filter(k => k.id in S.ivKpis).map(k => k.name);
@@ -1380,7 +1374,7 @@ const A = {
   kpiRow: el => {
     syncKpiEdit();
     const [list, i] = el.dataset.v.split('.');
-    if (i === 'add') S.kpiEdit[list].push(list === 'kpis' ? { name: '', weight: '', target_value: '', unit: '', actual_value: 0, auto: false } : { grp: '', name: '', expected: 3, actual: 0 });
+    if (i === 'add') S.kpiEdit[list].push(list === 'kpis' ? { name: '', weight: '', target_value: '', unit: '', actual_value: 0 } : { grp: '', name: '', expected: 3, actual: 0 });
     else S.kpiEdit[list].splice(+i, 1);
     render();
   },
@@ -1446,8 +1440,8 @@ const FORMS = {
   work: async fd => {
     const body = Object.fromEntries(fd.entries());
     if (S.data.kpis.length) {
-      body.kpi_links = fd.getAll('kpi_ck').map(id => ({ kpi_id: +id, value: fd.get('kpi_val_' + id) }));
-      Object.keys(body).forEach(k => { if (k.startsWith('kpi_val_') || k === 'kpi_ck') delete body[k]; });
+      body.kpi_links = fd.getAll('kpi_ck').map(id => ({ kpi_id: +id }));
+      Object.keys(body).forEach(k => { if (k === 'kpi_ck') delete body[k]; });
     }
     const id = S.modal.id;
     await api(id ? '/api/works/' + id : '/api/works', { method: id ? 'PUT' : 'POST', body });
@@ -1525,7 +1519,6 @@ document.addEventListener('input', e => {
 
 document.addEventListener('change', e => {
   const el = e.target;
-  if (el.dataset && /^kpis\.\d+\.auto$/.test(el.dataset.k || '')) { syncKpiEdit(); render(); return; }
   if (el.id === 'fileInput') { S.pendingFiles.push(...el.files); render(); return; }
   if (el.id === 'chatFile') { uploadChatFiles([...el.files]); return; }
   if (el.dataset && el.dataset.change === 'ivKpi') {
@@ -1534,7 +1527,6 @@ document.addEventListener('change', e => {
     if (S.ivDone) S.ivAnswers[KPI_Q] = ivKpiNames().join(', ') || '-';
     render(); return;
   }
-  if (el.dataset && el.dataset.change === 'ivKpiVal') { S.ivKpis[el.dataset.id] = el.value; saveChat(); return; }
   if (el.dataset && el.dataset.change === 'evWork') {
     const ev = S.data.evidence.find(x => x.id === +el.dataset.id);
     reloadAfter(api('/api/evidence/' + ev.id, { method: 'PUT', body: { work_id: el.value || null } }), 'เชื่อมโยงหลักฐานแล้ว');

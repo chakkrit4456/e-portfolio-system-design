@@ -80,12 +80,13 @@ CREATE INDEX IF NOT EXISTS works_user_idx    ON works(user_id);
 CREATE INDEX IF NOT EXISTS evidence_user_idx ON evidence(user_id);
 
 -- KPI แบบตัวเลข: target_value/actual_value/unit ใช้คำนวณ pct/score (target/actual TEXT เป็นค่าที่แสดงผล)
--- auto = คำนวณ actual จากผลงานที่เชื่อมโยง (work_kpis) — certified_only = นับเฉพาะผลงาน 'รับรองแล้ว'
+-- auto/certified_only เลิกใช้แล้ว: ผลงานของ KPI ให้ผู้ดูแลกรอกเอง (work_kpis เป็นข้อมูลอ้างอิงเท่านั้น)
 ALTER TABLE kpis ADD COLUMN IF NOT EXISTS target_value NUMERIC;
 ALTER TABLE kpis ADD COLUMN IF NOT EXISTS actual_value NUMERIC;
 ALTER TABLE kpis ADD COLUMN IF NOT EXISTS unit TEXT;
 ALTER TABLE kpis ADD COLUMN IF NOT EXISTS auto BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE kpis ADD COLUMN IF NOT EXISTS certified_only BOOLEAN NOT NULL DEFAULT false;
+UPDATE kpis SET auto = false, certified_only = false WHERE auto OR certified_only; -- เก็บค่าที่นับได้ล่าสุดไว้เป็นค่าตั้งต้น
 UPDATE kpis SET target_value = substring(replace(target, ',', '') from '[0-9]+(?:\.[0-9]+)?')::numeric,
                 actual_value = COALESCE(substring(replace(actual, ',', '') from '[0-9]+(?:\.[0-9]+)?')::numeric, 0),
                 unit = NULLIF(trim(regexp_replace(target, '[0-9.,]+', '')), '')

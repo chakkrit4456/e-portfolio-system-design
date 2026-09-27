@@ -318,7 +318,7 @@ app.get('/api/portfolio', auth, wrap(async (req, res) => {
                  FROM work_kpis wk WHERE wk.work_id=w.id) AS kpi_links
        FROM works w WHERE w.user_id=$1 ORDER BY w.created_at DESC, w.id DESC`, [id]),
     pool.query('SELECT id,work_id,name,kind,url,file_name,ev_date,status,checker FROM evidence WHERE user_id=$1 ORDER BY id', [id]),
-    pool.query('SELECT id,name,source,weight::float,target,actual,pct::float,score::float,unit,auto,certified_only FROM kpis WHERE user_id=$1 ORDER BY id', [id]),
+    pool.query('SELECT id,name,source,weight::float,target,actual,pct::float,score::float,unit FROM kpis WHERE user_id=$1 ORDER BY id', [id]),
     pool.query('SELECT id,grp,name,expected,actual FROM competencies WHERE user_id=$1 ORDER BY id', [id]),
     getAi(),
     getPeriod()
@@ -363,16 +363,13 @@ function kpiScore(target, actual) {
   const pct = Math.min(100, Math.round(actual / target * 100));
   return { pct, score: pct >= 100 ? 5 : Math.max(0, round2(5 - (100 - pct) / 10)) };
 }
-// คำนวณ actual ของ KPI อัตโนมัติจากผลงานที่เชื่อมโยง แล้วอัปเดต pct/score/ข้อความแสดงผลของ KPI ทั้งหมดของผู้ใช้
+// อัปเดต pct/score/ข้อความแสดงผลของ KPI ทั้งหมดของผู้ใช้จากค่าที่ผู้ดูแลกรอก (ผลงานที่เชื่อม KPI เป็นข้อมูลอ้างอิง ไม่นับเป็นคะแนน)
 async function recomputeKpis(userId, db = pool) {
   const { rows } = await db.query(
-    `SELECT k.id, k.target_value::float, k.actual_value::float, k.unit, k.auto,
-            (SELECT COALESCE(sum(wk.value), 0)::float FROM work_kpis wk JOIN works w ON w.id = wk.work_id
-              WHERE wk.kpi_id = k.id AND (NOT k.certified_only OR w.status = 'รับรองแล้ว')) AS linked
-       FROM kpis k WHERE k.user_id = $1`, [userId]);
+    'SELECT id, target_value::float, actual_value::float, unit FROM kpis WHERE user_id = $1', [userId]);
   for (const k of rows) {
     if (k.target_value == null) continue; // KPI เดิมที่เป็นข้อความล้วน — ไม่แตะ
-    const actual = k.auto ? k.linked : k.actual_value;
+    const actual = k.actual_value;
     const { pct, score } = kpiScore(k.target_value, actual);
     await db.query('UPDATE kpis SET actual_value=$1, target=$2, actual=$3, pct=$4, score=$5 WHERE id=$6',
       [actual, kpiText(k.target_value, k.unit), kpiText(actual ?? 0, k.unit), pct, score, k.id]);
@@ -852,7 +849,7 @@ app.post('/api/users', admin, wrap(async (req, res) => {
 app.get('/api/users/:id/kpis', admin, wrap(async (req, res) => {
   const id = +req.params.id;
   const [k, c, w] = await Promise.all([
-    pool.query('SELECT id,name,source,weight::float,target_value::float,actual_value::float,unit,auto,certified_only,target,actual FROM kpis WHERE user_id=$1 ORDER BY id', [id]),
+    pool.query('SELECT id,name,source,weight::float,target_value::float,actual_value::float,unit,target,actual FROM kpis WHERE user_id=$1 ORDER BY id', [id]),
     pool.query('SELECT id,grp,name,expected,actual FROM competencies WHERE user_id=$1 ORDER BY id', [id]),
     pool.query('SELECT id,title,status,kpi FROM works WHERE user_id=$1 ORDER BY created_at DESC, id DESC', [id])
   ]);
@@ -868,7 +865,7 @@ app.put('/api/users/:id/kpis', admin, wrap(async (req, res) => {
   const str = (v, max) => String(v ?? '').trim().slice(0, max);
   const kpis = (Array.isArray(b.kpis) ? b.kpis : []).slice(0, 50).map(k => ({
     id: +k.id || null, name: str(k.name, 300), source: str(k.source, 300) || null, unit: str(k.unit, 30) || null,
-    weight: num(k.weight), target: num(k.target_value), actual: num(k.actual_value) ?? 0, auto: !!k.auto, certifiedOnly: !!k.certified_only
+    weight: num(k.weight), target: num(k.target_value), actual: num(k.actual_value) ?? 0
   }));
   const comps = (Array.isArray(b.comps) ? b.comps : []).slice(0, 50).map(c => ({
     id: +c.id || null, grp: str(c.grp, 100), name: str(c.name, 300), expected: num(c.expected), actual: num(c.actual)
@@ -887,11 +884,11 @@ app.put('/api/users/:id/kpis', admin, wrap(async (req, res) => {
     const { rows: linked } = await db.query('SELECT DISTINCT wk.work_id FROM work_kpis wk JOIN kpis k ON k.id = wk.kpi_id WHERE k.user_id=$1', [id]);
     await db.query('DELETE FROM kpis WHERE user_id=$1 AND NOT (id = ANY($2::int[]))', [id, kpis.filter(k => k.id).map(k => k.id)]);
     for (const k of kpis) {
-      const v = [k.name, k.source, k.weight, k.target, k.actual, k.unit, k.auto, k.certifiedOnly];
+      const v = [k.name, k.source, k.weight, k.target, k.actual, k.unit];
       const r = k.id ? await db.query(
-        'UPDATE kpis SET name=$1,source=$2,weight=$3,target_value=$4,actual_value=$5,unit=$6,auto=$7,certified_only=$8 WHERE id=$9 AND user_id=$10', [...v, k.id, id]) : { rowCount: 0 };
+        'UPDATE kpis SET name=$1,source=$2,weight=$3,target_value=$4,actual_value=$5,unit=$6 WHERE id=$7 AND user_id=$8', [...v, k.id, id]) : { rowCount: 0 };
       if (!r.rowCount) await db.query(
-        'INSERT INTO kpis(user_id,name,source,weight,target_value,actual_value,unit,auto,certified_only) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)', [id, ...v]);
+        'INSERT INTO kpis(user_id,name,source,weight,target_value,actual_value,unit) VALUES($1,$2,$3,$4,$5,$6,$7)', [id, ...v]);
     }
     await db.query('DELETE FROM competencies WHERE user_id=$1 AND NOT (id = ANY($2::int[]))', [id, comps.filter(c => c.id).map(c => c.id)]);
     for (const c of comps) {
