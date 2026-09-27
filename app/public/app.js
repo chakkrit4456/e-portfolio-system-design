@@ -668,6 +668,75 @@ async function loadUsers() {
 }
 
 // ---------------- view: public portfolio ----------------
+// ---------------- print: สรุปแฟ้มสะสมงาน A4 หน้าเดียว (แสดงเฉพาะตอนพิมพ์; ย่ออัตโนมัติให้พอดี 1 แผ่น) ----------------
+function printSheet(D) {
+  const d = S.data, u = d.user, p = PER();
+  const th = 'text-align:left;font-weight:600;color:#6B6264;padding:4px 6px;border-bottom:1.5px solid #7B1E2B;font-size:9pt';
+  const td = 'padding:4px 6px;border-bottom:1px solid #EFE8E6;vertical-align:top';
+  const sec = t => `<div style="font-weight:700;color:#7B1E2B;font-size:10.5pt;margin:0 0 5px;display:flex;align-items:center;gap:6px"><span style="width:4px;height:12px;background:#B8913A;border-radius:2px"></span>${t}</div>`;
+  const stats = [['ผลงาน', D.n + ' รายการ'], ['รับรองแล้ว', D.certified + ' รายการ'], ['หลักฐาน', D.evTotal + ' รายการ'], ['คะแนน KPI', D.kpiScore + ' / 5'], ['สมรรถนะผ่านเกณฑ์', D.compPass + ' / ' + d.comps.length]];
+  const info = [['ตำแหน่ง', (u.position || '-') + (u.level ? ' ' + u.level : '')], ['สังกัด', u.group_name], ['ผู้บังคับบัญชา', u.supervisor], ['รอบการประเมิน', p.round + ' ปีงบประมาณ ' + p.fiscalYear], ['ช่วงเวลา', periodRange()]];
+  return `
+<div class="print-sheet">
+  <div style="background:#4A0F18;color:#fff;border-radius:10px;padding:12px 16px;display:flex;gap:16px;align-items:center">
+    <div style="flex:1;min-width:0">
+      <div style="font-size:8.5pt;color:#F1D9A0;letter-spacing:.5px">แฟ้มสะสมงาน (e‑Portfolio) · ปีงบประมาณ พ.ศ. ${esc(p.fiscalYear)}</div>
+      <div style="font-family:'Noto Serif Thai',serif;font-size:17pt;font-weight:700;line-height:1.3;margin-top:2px">${esc(u.name)}</div>
+      <div style="display:grid;grid-template-columns:auto 1fr auto 1fr;gap:1px 8px;font-size:8.5pt;margin-top:5px">${info.map(([k, v]) => `<span style="color:#D9B8BC">${k}</span><span>${esc(v || '-')}</span>`).join('')}</div>
+    </div>
+    <div style="width:78px;height:78px;border-radius:50%;background:conic-gradient(#D4AF5A ${Math.round(D.kpiScore / 5 * 360)}deg, rgba(255,255,255,.15) 0);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+      <div style="width:62px;height:62px;border-radius:50%;background:#4A0F18;display:flex;flex-direction:column;align-items:center;justify-content:center"><b style="font-size:16pt;line-height:1">${D.kpiScore}</b><span style="font-size:7pt;color:#D9B8BC">KPI / 5.00</span></div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:8px 0 10px">${stats.map(([k, v]) => `<div style="border:1px solid #E6DEDC;border-radius:8px;padding:5px 8px"><div style="font-size:8pt;color:#8A7F81">${k}</div><div style="font-size:11pt;font-weight:700;color:#7B1E2B">${v}</div></div>`).join('')}</div>
+  <div style="display:grid;grid-template-columns:1.35fr 1fr;gap:14px;margin-bottom:10px">
+    <div>
+      ${sec('ผลสัมฤทธิ์ตามตัวชี้วัด (KPI)')}
+      <table style="width:100%;border-collapse:collapse;font-size:8.5pt"><tr><th style="${th}">ตัวชี้วัด</th><th style="${th}">น้ำหนัก</th><th style="${th}">เป้าหมาย</th><th style="${th}">ผลงาน</th><th style="${th}">%</th><th style="${th}">คะแนน</th></tr>
+      ${d.kpis.map(k => `<tr><td style="${td}">${esc(k.name)}</td><td style="${td}">${k.weight}%</td><td style="${td}">${esc(k.target || '-')}</td><td style="${td};font-weight:600">${esc(k.actual || '-')}</td><td style="${td};color:${k.pct >= 100 ? '#1E6B3A' : '#B8913A'}">${k.pct}%</td><td style="${td};font-weight:700;color:#7B1E2B">${k.score.toFixed(2)}</td></tr>`).join('') || `<tr><td colspan="6" style="${td};color:#8A7F81">ยังไม่มีข้อมูลตัวชี้วัด</td></tr>`}
+      </table>
+      ${D.duties.length ? `<div style="margin-top:10px">${sec('หน้าที่ความรับผิดชอบหลัก')}<ol style="margin:0;padding-left:18px;font-size:8.5pt;line-height:1.5">${D.duties.map(t => `<li>${esc(t)}</li>`).join('')}</ol></div>` : ''}
+    </div>
+    <div>
+      ${sec('สมรรถนะ (Competency)')}
+      <div style="display:flex;flex-direction:column;gap:5px">${d.comps.map(c => { const g = gapInfo(c); return `
+        <div style="font-size:8.5pt"><div style="display:flex;justify-content:space-between;gap:6px"><span><span style="color:#8A7F81">${esc(c.grp)}</span> ${esc(c.name)}</span><span style="color:${g.gapColor};font-weight:600;white-space:nowrap">${c.actual}/${c.expected}</span></div>
+        <div style="position:relative;height:6px;background:#F1EAE8;border-radius:3px;margin-top:2px"><div style="height:100%;width:${c.actual / 5 * 100}%;background:#7B1E2B;border-radius:3px"></div><div style="position:absolute;top:-2px;bottom:-2px;left:calc(${c.expected / 5 * 100}% - 1px);width:2px;background:#B8913A"></div></div></div>`; }).join('') || '<div style="font-size:8.5pt;color:#8A7F81">ยังไม่มีข้อมูลสมรรถนะ</div>'}</div>
+      ${d.comps.length ? '<div style="font-size:7.5pt;color:#8A7F81;margin-top:4px">แถบสีเข้ม = ระดับที่ประเมินได้ · เส้นทอง = ระดับที่คาดหวัง (0–5)</div>' : ''}
+    </div>
+  </div>
+  ${sec('ผลงานและโครงการ')}
+  <table style="width:100%;border-collapse:collapse;font-size:8.5pt"><tr><th style="${th};width:22px">#</th><th style="${th}">ชื่องาน / เอกสารอ้างอิง</th><th style="${th}">ประเภท</th><th style="${th}">ผลผลิต / ผลลัพธ์</th><th style="${th}">ตัวชี้วัด</th><th style="${th}">หลักฐาน</th><th style="${th}">สถานะ</th></tr>
+  ${D.works.map((w, i) => `<tr><td style="${td};color:#8A7F81">${i + 1}</td><td style="${td}"><div style="font-weight:600">${esc(w.title)}</div><div style="color:#8A7F81;font-size:7.5pt">${esc([w.ref, w.period].filter(Boolean).join(' · ') || '-')}</div></td><td style="${td}">${esc(w.type)}</td><td style="${td}">${esc(w.result || '-')}</td><td style="${td}">${esc(w.kpi || '-')}</td><td style="${td};text-align:center">${w.ev}</td><td style="${td};white-space:nowrap;color:${w.stFg};font-weight:600">${esc(w.status)}</td></tr>`).join('') || `<tr><td colspan="7" style="${td};color:#8A7F81">ยังไม่มีผลงาน</td></tr>`}
+  </table>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:22px;font-size:8.5pt;text-align:center">
+    <div><div style="border-bottom:1px dotted #5A5052;height:22px"></div><div style="margin-top:4px">(${esc(u.name)})</div><div style="color:#6B6264">ผู้จัดทำ</div></div>
+    <div><div style="border-bottom:1px dotted #5A5052;height:22px"></div><div style="margin-top:4px">(${esc(u.supervisor || '.................................')})</div><div style="color:#6B6264">ผู้บังคับบัญชา / ผู้รับรอง</div></div>
+  </div>
+  <div style="margin-top:10px;font-size:7pt;color:#A59A9C;display:flex;justify-content:space-between"><span>BPCD e‑Portfolio · สำนักพัฒนาสมรรถนะครูและบุคลากรอาชีวศึกษา</span><span>พิมพ์เมื่อ ${esc(new Date().toLocaleDateString('th-TH', { dateStyle: 'long' }))}</span></div>
+</div>`;
+}
+// ย่อแผ่นพิมพ์ให้พอดี A4 หน้าเดียว: วัดความสูงจริงแล้วตั้ง zoom ก่อนเปิดหน้าต่างพิมพ์
+function fitPrintSheet() {
+  const el = document.querySelector('.print-sheet');
+  if (!el) return;
+  const pageW = 718, pageH = 1010; // A4 190×277mm ที่ 96dpi (ความสูงเผื่อระยะให้การตัดบรรทัดตอนพิมพ์)
+  el.style.zoom = ''; el.style.width = '';
+  el.classList.add('measure');
+  // ย่อแล้วขยายความกว้างตามอัตราที่ย่อ ให้ข้อความกระจายเต็มหน้ากว้าง (ความสูงลดลง) — วนหาอัตราที่พอดี
+  let z = 1;
+  for (let i = 0; i < 6; i++) {
+    el.style.width = Math.round(pageW / z) + 'px';
+    const h = el.scrollHeight * z;
+    if (h <= pageH) break;
+    z = Math.floor(z * pageH / h * 1000) / 1000;
+  }
+  el.classList.remove('measure');
+  el.style.zoom = z < 1 ? String(z) : '';
+  if (z >= 1) el.style.width = '';
+}
+window.addEventListener('beforeprint', fitPrintSheet);
+
 function viewPortfolio(D) {
   const d = S.data, u = d.user;
   const kpiDeg = Math.round(D.kpiScore / 5 * 360) + 'deg';
@@ -1130,7 +1199,7 @@ function render() {
   else if (!S.me || !S.data) root.innerHTML = viewLogin();
   else {
     const D = derive();
-    root.innerHTML = (S.view === 'portfolio' ? viewPortfolio(D) : viewAdmin(D)) + viewChat() + viewModal();
+    root.innerHTML = (S.view === 'portfolio' ? viewPortfolio(D) + printSheet(D) : viewAdmin(D)) + viewChat() + viewModal();
   }
 
   if (focusId) {
@@ -1347,7 +1416,8 @@ const A = {
   side: () => set({ sideOpen: !S.sideOpen }),
   goPortfolio: () => { showPortfolio(); window.scrollTo(0, 0); },
   goAdmin: () => { set({ view: 'admin' }); window.scrollTo(0, 0); },
-  print: () => window.print(),
+  // รอฟอนต์โหลดครบก่อนวัดความสูง ไม่งั้นวัดจากฟอนต์สำรองแล้วล้นหน้า
+  print: () => (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => { fitPrintSheet(); window.print(); }),
   logout: async () => { clearChat(); try { await api('/api/logout', { method: 'POST' }); } catch (e) { /* ignore */ } location.reload(); },
   typeFilter: el => set({ typeFilter: el.dataset.v }),
   startInterview: () => { localStore('hintSeen', '1'); set({ chatOpen: true, mode: 'interview', hintSeen: true, _scrollChat: true }); focusChat(); },

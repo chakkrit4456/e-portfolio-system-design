@@ -69,8 +69,15 @@ button:focus-visible,a:focus-visible{outline:2px solid #B8913A;outline-offset:2p
   .detail-rows{grid-template-columns:1fr!important}
 }
 
+/* แผ่นพิมพ์ Portfolio: ซ่อนบนจอ, ตอนพิมพ์แสดงแผ่นนี้แผ่นเดียว */
+.print-sheet{display:none;width:190mm;background:#fff;color:#1F1A1B;font-size:9pt;line-height:1.45}
+.print-sheet.measure{display:block;position:absolute;left:-10000px;top:0}
+.print-sheet tr{break-inside:avoid}
 @media print{
-  @page{margin:.8cm}
+  @page{size:A4 portrait;margin:10mm}
+  body:has(.print-sheet) #root > :not(.print-sheet){display:none!important}
+  body:has(.print-sheet) .print-sheet{display:block}
+  body:has(.print-sheet) #toast{display:none!important}
   .no-print{display:none!important}
   *{print-color-adjust:exact;-webkit-print-color-adjust:exact;backdrop-filter:none!important}
   body{background:#fff}
