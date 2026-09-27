@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snyk Scan Report</title>
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--fg:#1d2330;--mut:#667085;--ok:#12805c;--warn:#b54708;--line:#e4e7ec}
+@media (prefers-color-scheme:dark){:root{--bg:#111418;--card:#1a1f26;--fg:#e6e9ee;--mut:#98a2b3;--ok:#3ccf91;--warn:#f5a454;--line:#2a313b}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,"Segoe UI",Tahoma,sans-serif}
+main{max-width:860px;margin:0 auto;padding:32px 16px}
+h1{margin:0 0 4px;font-size:26px}.mut{color:var(--mut)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:24px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+.num{font-size:28px;font-weight:700}.ok{color:var(--ok)}.warn{color:var(--warn)}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+td,th{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:13px;color:var(--mut);font-weight:600}
+code{font-family:Consolas,monospace;font-size:13px}
+h2{margin-top:32px;font-size:19px}
+</style>
+</head>
+<body>
+<main>
+<h1>รายงานการสแกนความปลอดภัยด้วย Snyk</h1>
+<div class="mut">โปรเจค <b>bpcd-e-portfolio</b> (<code>app/</code>) · สแกนเมื่อ 27 ก.ย. 2569 (2026-09-27) · Snyk CLI 1.1307.4 · org: chakkrit4456</div>
+
+<div class="grid">
+  <div class="card"><div class="mut">ช่องโหว่ใน dependencies</div><div class="num ok">0</div></div>
+  <div class="card"><div class="mut">dependencies ที่ตรวจ</div><div class="num">93</div></div>
+  <div class="card"><div class="mut">ปัญหา license</div><div class="num ok">0</div></div>
+  <div class="card"><div class="mut">Snyk Code (SAST)</div><div class="num warn">9 รายการ</div><div class="mut">error 5 · warning 3 · note 1</div></div>
+</div>
+
+<h2>ผลการสแกนแต่ละประเภท</h2>
+<table>
+<tr><th>ประเภท</th><th>คำสั่ง</th><th>ผลลัพธ์</th></tr>
+<tr><td>Open Source (SCA)</td><td><code>snyk test</code></td><td class="ok">✔ ไม่พบช่องโหว่ที่รู้จัก (No known vulnerabilities) — ตรวจจาก <code>package-lock.json</code>, npm</td></tr>
+<tr><td>License compliance</td><td><code>snyk test</code></td><td class="ok">✔ ไม่พบ license ที่ขัดกับนโยบายของ org (GPL/AGPL/LGPL/MPL ฯลฯ)</td></tr>
+<tr><td>Source code (SAST)</td><td><code>snyk code test</code></td><td class="warn">⚠ พบ 9 รายการ (ดูรายละเอียดด้านล่าง) — หลังประเมินแล้ว ส่วนใหญ่เป็น false positive หรือความเสี่ยงต่ำ</td></tr>
+</table>
+
+<h2>ผล Snyk Code (SAST) พร้อมการประเมิน</h2>
+<table>
+<tr><th>ระดับ</th><th>ปัญหา / ตำแหน่ง</th><th>การประเมิน</th></tr>
+<tr><td class="warn">error</td><td>Hardcoded Secret — <code>server.js:93</code> (ค่ามาจาก <code>server.js:14</code>)</td><td><b>ควรแก้</b> — ถ้าไม่ได้ตั้ง <code>SESSION_SECRET</code> จะใช้ค่าตายตัว <code>'dev-secret-please-change'</code> ซึ่งใช้เซ็น session, CSRF และเข้ารหัส AI key ควรให้ server ไม่ยอมเริ่มทำงานใน production เมื่อไม่มีค่านี้</td></tr>
+<tr><td class="warn">error</td><td>Path Traversal — <code>server.js:314, 316, 319</code> (ตรวจ magic bytes ของไฟล์อัปโหลด)</td><td>False positive — <code>f.path</code> สร้างโดย multer จาก <code>crypto.randomUUID() + นามสกุล</code> (<code>server.js:276</code>) ผู้ใช้ควบคุม path ไม่ได้</td></tr>
+<tr><td class="warn">error</td><td>Path Traversal — <code>server.js:381</code> (<code>DELETE /api/evidence/:id</code>)</td><td>False positive — ชื่อไฟล์ที่ลบมาจากฐานข้อมูล (UUID ที่ server สร้าง) ไม่ได้มาจาก HTTP parameter โดยตรง และจำกัดตาม <code>user_id</code></td></tr>
+<tr><td>warning</td><td>DOM XSS — <code>public/app.js:896</code> (<code>root.innerHTML</code>)</td><td>ความเสี่ยงต่ำ แต่ควรตรวจทานต่อ — มีฟังก์ชัน <code>esc()</code> (<code>app.js:81</code>) ใช้อยู่ 92 จุด แต่ SPA ประกอบ HTML ทั้งหน้าจาก string ถ้าลืม <code>esc()</code> จุดใดจุดหนึ่งจะเกิด XSS ได้ (โดยเฉพาะข้อความจาก AI chat) แนะนำให้เพิ่ม Content-Security-Policy</td></tr>
+<tr><td>warning</td><td>CSRF disabled — <code>server.js:83</code></td><td>False positive — แอปมี CSRF token ของตัวเอง (header <code>X-CSRF-Token</code> ตรวจทุก request ที่แก้ไขข้อมูล) Snyk รู้จักเฉพาะไลบรารี csurf</td></tr>
+<tr><td>warning</td><td>X-Powered-By header — <code>server.js:83</code></td><td>ควรแก้ (ทำง่าย) — เพิ่ม <code>app.disable('x-powered-by')</code> หรือใช้ helmet ซึ่งให้ security header อื่น ๆ ด้วย</td></tr>
+<tr><td>note</td><td>Insecure hash (SHA-1) — <code>server.js:86</code></td><td>False positive — ใช้ SHA-1 ทำ version string ของไฟล์หน้าเว็บ ไม่ได้ใช้กับรหัสผ่าน (รหัสผ่านใช้ bcrypt)</td></tr>
+</table>
+
+<h2>Dependencies โดยตรง</h2>
+<table>
+<tr><th>แพ็กเกจ</th><th>เวอร์ชันที่กำหนด</th><th>สถานะ</th></tr>
+<tr><td>bcryptjs</td><td>^2.4.3</td><td class="ok">ไม่พบช่องโหว่</td></tr>
+<tr><td>connect-pg-simple</td><td>^10.0.0</td><td class="ok">ไม่พบช่องโหว่</td></tr>
+<tr><td>express</td><td>^4.21.2</td><td class="ok">ไม่พบช่องโหว่</td></tr>
+<tr><td>express-rate-limit</td><td>^7.4.1</td><td class="ok">ไม่พบช่องโหว่</td></tr>
+<tr><td>express-session</td><td>^1.18.1</td><td class="ok">ไม่พบช่องโหว่</td></tr>
+<tr><td>multer</td><td>^2.0.2</td><td class="ok">ไม่พบช่องโหว่</td></tr>
+<tr><td>pg</td><td>^8.13.1</td><td class="ok">ไม่พบช่องโหว่</td></tr>
+</table>
+
+<h2>ขอบเขตและข้อสังเกต</h2>
+<ul>
+<li>ไม่มีการแก้ไขโค้ดหรือไฟล์ใดในโปรเจค (สแกนอย่างเดียว)</li>
+<li>โฟลเดอร์ <code>project/</code> เป็นไฟล์ต้นแบบ HTML/CSS ไม่มี manifest ของแพ็กเกจ จึงไม่มีอะไรให้ SCA ตรวจ</li>
+<li>ไม่ได้สแกน container image (<code>postgres:16</code> ใน docker-compose) — ทำเพิ่มได้ด้วย <code>snyk container test postgres:16</code></li>
+<li>ผลนี้ครอบคลุมเฉพาะช่องโหว่ที่ Snyk รู้จัก ณ วันที่สแกน ควรสแกนซ้ำเป็นระยะ</li>
+</ul>
+</main>
+</body>
+</html>
