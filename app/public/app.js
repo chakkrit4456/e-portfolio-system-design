@@ -658,7 +658,7 @@ ${pageHead('จัดการผู้ใช้', 'บัญชีบุคล�
     <div style="color:#5A5052">${esc((u.position || '-') + (u.level || ''))}<div style="font-size:12px;color:#8A7F81">${esc(u.group_name || '')}</div></div>
     <div>${u.role === 'admin' ? '<span style="font-size:12px;font-weight:600;background:#4A0F18;color:#F1D9A0;padding:2px 9px;border-radius:20px">ผู้ดูแลระบบ</span>' : '<span style="font-size:12px;padding:2px 9px;border-radius:20px;background:#F4F1EF;color:#5A5052">บุคลากร</span>'}</div>
     <div>${u.works}${u.locked ? ' <i class="bi bi-lock-fill" title="ถูกหน่วงการเข้าสู่ระบบ" style="color:#B3261E"></i>' : ''}</div>
-    <div style="display:flex;gap:2px"><button class="icon-btn" data-act="editKpi" data-id="${u.id}" title="KPI และสมรรถนะ"><i class="bi bi-graph-up-arrow"></i></button><button class="icon-btn" data-act="editUser" data-id="${u.id}" title="แก้ไข"><i class="bi bi-pencil"></i></button>${u.id === S.data.user.id ? '' : `<button class="icon-btn" data-act="delUser" data-id="${u.id}" title="ลบ"><i class="bi bi-trash3"></i></button>`}</div>
+    <div style="display:flex;gap:2px"><button class="icon-btn" data-act="editKpi" data-id="${u.id}" title="KPI และสมรรถนะ"><i class="bi bi-graph-up-arrow"></i></button>${u.id === S.data.user.id ? '' : `<button class="icon-btn" data-act="impersonate" data-id="${u.id}" title="สวมสิทธิ์เป็นผู้ใช้นี้"><i class="bi bi-person-bounding-box"></i></button>`}<button class="icon-btn" data-act="editUser" data-id="${u.id}" title="แก้ไข"><i class="bi bi-pencil"></i></button>${u.id === S.data.user.id ? '' : `<button class="icon-btn" data-act="delUser" data-id="${u.id}" title="ลบ"><i class="bi bi-trash3"></i></button>`}</div>
   </div>`).join('')}
 </div></div>`;
 }
@@ -1207,7 +1207,7 @@ function render() {
   else if (!S.me || !S.data) root.innerHTML = viewLogin();
   else {
     const D = derive();
-    root.innerHTML = (S.view === 'portfolio' ? viewPortfolio(D) + printSheet(D) : viewAdmin(D)) + viewChat() + viewModal();
+    root.innerHTML = impersonateBar() + (S.view === 'portfolio' ? viewPortfolio(D) + printSheet(D) : viewAdmin(D)) + viewChat() + viewModal();
   }
 
   if (focusId) {
@@ -1232,6 +1232,26 @@ function showPortfolio(quiet) {
     return reloadAfter(Promise.resolve());
   }
   if (!quiet) render();
+}
+// แถบเตือนตลอดเวลาที่ผู้ดูแลสวมสิทธิ์ผู้ใช้อยู่
+function impersonateBar() {
+  const by = S.data && S.data.impersonator;
+  if (!by) return '';
+  return `<div class="no-print" style="position:sticky;top:0;z-index:80;background:#B8913A;color:#1F1A1B;padding:8px 16px;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;font-size:13.5px">
+  <i class="bi bi-person-bounding-box"></i><span>กำลังสวมสิทธิ์เป็น <b>${esc(S.data.user.name)}</b> (${esc(S.data.user.username)}) — ทุกการแก้ไขจะบันทึกเป็นของผู้ใช้นี้ และระบุว่าทำโดย ${esc(by)}</span>
+  <button data-act="stopImpersonate" style="background:#4A0F18;color:#fff;border-radius:16px;padding:4px 14px;font-weight:600">กลับเป็นผู้ดูแล</button>
+</div>`;
+}
+async function switchUser(p, page, msg) {
+  try {
+    await p;
+    saveChat(); // เก็บแชทของบัญชีเดิมไว้ (แยกคีย์ตามผู้ใช้) แล้วโหลดของบัญชีใหม่
+    Object.assign(S, { view: 'admin', page, viewPeriod: null, workPeriod: null, users: null, periodsAdmin: null, kpiEdit: null, modal: null, aiForm: null, _chatRestored: false, askMsgs: S.askMsgs.slice(0, 1), ivStep: 0, ivAnswers: [], ivMsgs: [greet()], ivDone: false, draftSummary: '', ivKpis: {}, ivEvidence: [] });
+    await loadData();
+    location.hash = '';
+    render(); window.scrollTo(0, 0);
+    toast(msg);
+  } catch (e) { toast(e.message); }
 }
 function readHash() {
   const [a, b] = location.hash.replace(/^#\/?/, '').split('/');
@@ -1425,6 +1445,12 @@ const A = {
   goPortfolio: () => { showPortfolio(); window.scrollTo(0, 0); },
   goAdmin: () => { set({ view: 'admin' }); window.scrollTo(0, 0); },
   // รอฟอนต์โหลดครบก่อนวัดความสูง ไม่งั้นวัดจากฟอนต์สำรองแล้วล้นหน้า
+  impersonate: el => {
+    const u = (S.users || []).find(x => x.id === +el.dataset.id);
+    if (!u || !confirm('สวมสิทธิ์เป็น "' + u.name + '"?\nจะเห็นและแก้ไขข้อมูลได้เหมือนผู้ใช้นี้ กด "กลับเป็นผู้ดูแล" ที่แถบด้านบนเพื่อออก')) return;
+    switchUser(api('/api/users/' + u.id + '/impersonate', { method: 'POST' }), 'dashboard', 'กำลังสวมสิทธิ์เป็น ' + u.name);
+  },
+  stopImpersonate: () => switchUser(api('/api/impersonate/stop', { method: 'POST' }), 'users', 'กลับเป็นผู้ดูแลแล้ว'),
   delPhoto: () => { if (confirm('ลบรูปถ่าย?')) reloadAfter(api('/api/profile/photo', { method: 'DELETE' }), 'ลบรูปถ่ายแล้ว'); },
   print: () => (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => { fitPrintSheet(); window.print(); }),
   logout: async () => { clearChat(); try { await api('/api/logout', { method: 'POST' }); } catch (e) { /* ignore */ } location.reload(); },

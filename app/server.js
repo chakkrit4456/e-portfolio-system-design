@@ -7,7 +7,15 @@ const PgSession = require('connect-pg-simple')(session);
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
-const { pool, migrate, audit } = require('./db');
+const { pool, migrate, audit: dbAudit } = require('./db');
+const { AsyncLocalStorage } = require('async_hooks');
+// ระหว่างผู้ดูแลสวมสิทธิ์ผู้ใช้ ทุก audit ถูกบันทึกเป็นของผู้ใช้นั้นพร้อมระบุชื่อผู้ดูแลที่ทำแทน
+const reqStore = new AsyncLocalStorage();
+function audit(userId, action, detail) {
+  const req = reqStore.getStore();
+  const imp = req && req.session && req.session.impersonator;
+  return dbAudit(userId, action, imp ? (detail ? detail + ' ' : '') + '[สวมสิทธิ์โดย ' + imp.name + ' #' + imp.id + ']' : detail);
+}
 const seed = require('./db/seed');
 const security = require('./security');
 
@@ -175,6 +183,7 @@ async function callLLM(messages) {
 
 // ---------- App ----------
 const app = express();
+app.use((req, res, next) => reqStore.run(req, next));
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 // เวอร์ชันของไฟล์หน้าเว็บ — client เทียบกับ header นี้เพื่อรู้ว่ามี deploy ใหม่และต้องรีเฟรช
@@ -293,6 +302,35 @@ app.post('/api/login', loginLimiter, wrap(async (req, res) => {
   });
 }));
 
+// ---------- สวมสิทธิ์ผู้ใช้ (ผู้ดูแลเท่านั้น) ----------
+// session.user กลายเป็นผู้ใช้เป้าหมาย (สิทธิ์ตามผู้ใช้นั้นจริง) และเก็บผู้ดูแลตัวจริงไว้ใน session.impersonator เพื่อกลับคืน
+app.post('/api/users/:id/impersonate', admin, wrap(async (req, res) => {
+  if (req.session.impersonator) return res.status(400).json({ error: 'กำลังสวมสิทธิ์อยู่ — กลับเป็นผู้ดูแลก่อน' });
+  const id = +req.params.id;
+  if (id === uid(req)) return res.status(400).json({ error: 'ไม่สามารถสวมสิทธิ์ตัวเองได้' });
+  const { rows } = await pool.query('SELECT id,role,name,username FROM users WHERE id=$1', [id]);
+  if (!rows[0]) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+  const me = req.session.user;
+  dbAudit(me.id, 'impersonate_start', rows[0].username);
+  req.session.impersonator = { id: me.id, role: me.role, name: me.name };
+  req.session.user = { id: rows[0].id, role: rows[0].role, name: rows[0].name };
+  res.json({ ok: true });
+}));
+app.post('/api/impersonate/stop', auth, wrap(async (req, res) => {
+  const imp = req.session.impersonator;
+  if (!imp) return res.status(400).json({ error: 'ไม่ได้สวมสิทธิ์อยู่' });
+  // ผู้ดูแลตัวจริงอาจถูกลดสิทธิ์/ลบระหว่างนั้น — ตรวจกับฐานข้อมูลก่อนคืนสิทธิ์
+  const { rows } = await pool.query('SELECT id,role,name FROM users WHERE id=$1', [imp.id]);
+  const target = req.session.user;
+  delete req.session.impersonator;
+  if (!rows[0] || rows[0].role !== 'admin') {
+    return req.session.destroy(() => res.status(401).json({ error: 'บัญชีผู้ดูแลไม่มีสิทธิ์แล้ว — กรุณาเข้าสู่ระบบใหม่' }));
+  }
+  req.session.user = { id: rows[0].id, role: rows[0].role, name: rows[0].name };
+  dbAudit(rows[0].id, 'impersonate_stop', 'user #' + target.id);
+  res.json({ ok: true });
+}));
+
 app.post('/api/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
@@ -341,6 +379,7 @@ app.get('/api/portfolio', auth, wrap(async (req, res) => {
     period, // รอบที่กำลังดู (KPI/สมรรถนะ)
     current, // รอบปัจจุบันของระบบ (ใช้แสดงปีงบทั่วไป)
     periods,
+    impersonator: req.session.impersonator ? req.session.impersonator.name : null,
     workPeriod: wAll ? 'all' : wp, // รอบของผลงาน/หลักฐานที่กำลังดู
     kpiOptions: kpiOptions.rows
   });
