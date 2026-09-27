@@ -674,9 +674,12 @@ function periodFields(b) {
 }
 app.get('/api/periods', admin, wrap(async (req, res) => {
   const [periods, currentId, counts] = await Promise.all([listPeriods(), currentPeriodId(),
-    pool.query('SELECT period_id, count(*)::int n FROM kpis GROUP BY period_id')]);
-  const n = new Map(counts.rows.map(r => [r.period_id, r.n]));
-  res.json({ currentId, periods: periods.map(p => ({ ...p, kpis: n.get(p.id) || 0 })) });
+    // คะแนน KPI ถ่วงน้ำหนักของรอบ = ค่าเฉลี่ยของคะแนนถ่วงน้ำหนักรายคน (Σ score×weight / Σ weight) — สูตรเดียวกับแดชบอร์ด
+    pool.query(`SELECT period_id, count(*)::int AS people, avg(ws)::float AS score FROM (
+        SELECT period_id, user_id, sum(score * weight) / NULLIF(sum(weight), 0) AS ws FROM kpis GROUP BY period_id, user_id
+      ) t WHERE ws IS NOT NULL GROUP BY period_id`)]);
+  const n = new Map(counts.rows.map(r => [r.period_id, r]));
+  res.json({ currentId, periods: periods.map(p => ({ ...p, kpiScore: n.has(p.id) ? n.get(p.id).score : null, kpiPeople: n.has(p.id) ? n.get(p.id).people : 0 })) });
 }));
 // สร้างรอบใหม่ — copyFrom: คัดลอกตัวชี้วัด (ผลงานเริ่มที่ 0) และสมรรถนะของทุกคนจากรอบนั้น
 app.post('/api/periods', admin, wrap(async (req, res) => {

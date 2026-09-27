@@ -471,14 +471,14 @@ function pagePeriod() {
   const p = ed || PER();
   const y = +p.fiscalYear || new Date().getFullYear() + 543;
   const presets = [[1, 'รอบที่ 1', '10-01', '03-31', -1, 0], [2, 'รอบที่ 2', '04-01', '09-30', 0, 0], [0, 'ทั้งปีงบประมาณ', '10-01', '09-30', -1, 0]];
-  const cols = 'grid-template-columns:80px minmax(0,1.6fr) minmax(0,1.6fr) 60px minmax(0,1.4fr) 76px';
+  const cols = 'grid-template-columns:70px minmax(0,1.5fr) minmax(0,1.6fr) 120px minmax(0,1.3fr) 76px';
   return `
 ${pageHead('รอบการประเมิน', 'KPI และสมรรถนะแยกเก็บตามรอบ — รอบปัจจุบันคือรอบที่บุคลากรเห็นและผู้ดูแลแก้ไขเป็นค่าเริ่มต้น')}
 <div style="${card};overflow:hidden" class="table-wrap"><div class="table-min" style="min-width:680px">
-  <div style="display:grid;${cols};gap:12px;padding:12px 20px;background:#FAF7F6;border-bottom:1px solid #EFE8E6;font-size:12px;color:#6B6264;font-weight:600"><div>ปีงบ</div><div>รอบ</div><div>ช่วงเวลา</div><div>KPI</div><div>สถานะ</div><div></div></div>
+  <div style="display:grid;${cols};gap:12px;padding:12px 20px;background:#FAF7F6;border-bottom:1px solid #EFE8E6;font-size:12px;color:#6B6264;font-weight:600"><div>ปีงบ</div><div>รอบ</div><div>ช่วงเวลา</div><div>KPI ถ่วงน้ำหนัก</div><div>สถานะ</div><div></div></div>
   ${L.periods.map(x => { const cur = x.id === L.currentId; return `
   <div style="display:grid;${cols};gap:12px;padding:12px 20px;border-bottom:1px solid #F3EEEC;font-size:13.5px;align-items:center;${x.id === S.perEdit ? 'background:#FDFAF3' : ''}">
-    <div style="font-weight:600">${esc(x.fiscalYear)}</div><div>${esc(x.round)}</div><div style="color:#5A5052">${esc(thDate(x.start) + ' – ' + thDate(x.end))}</div><div>${x.kpis}</div>
+    <div style="font-weight:600">${esc(x.fiscalYear)}</div><div>${esc(x.round)}</div><div style="color:#5A5052">${esc(thDate(x.start) + ' – ' + thDate(x.end))}</div><div>${x.kpiScore == null ? '<span style="color:#8A7F81">-</span>' : `<b style="color:#7B1E2B">${x.kpiScore.toFixed(2)}</b><span style="font-size:12px;color:#8A7F81"> / 5.00</span><div style="font-size:11.5px;color:#8A7F81">เฉลี่ย ${x.kpiPeople} คน</div>`}</div>
     <div>${cur ? '<span style="font-size:12px;font-weight:600;background:#E6F2EA;color:#1E6B3A;padding:2px 9px;border-radius:20px">รอบปัจจุบัน</span>' : `<button class="btn btn-outline" style="font-size:12px;padding:3px 10px" data-act="perCurrent" data-id="${x.id}">ตั้งเป็นรอบปัจจุบัน</button>`}</div>
     <div style="display:flex;gap:2px"><button class="icon-btn" data-act="perEdit" data-id="${x.id}" title="แก้ไข"><i class="bi bi-pencil"></i></button>${cur ? '' : `<button class="icon-btn" data-act="perDel" data-id="${x.id}" title="ลบ"><i class="bi bi-trash3"></i></button>`}</div>
   </div>`; }).join('')}
