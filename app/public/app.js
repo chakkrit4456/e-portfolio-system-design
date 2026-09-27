@@ -412,10 +412,10 @@ ${list.length ? '' : `<div style="${card}">${emptyRow('ยังไม่มี�
 }
 
 // ---------------- page: KPI ----------------
-// ผู้ดูแลเลือกดู KPI/สมรรถนะของรอบใดก็ได้ (ของตัวเอง); บุคลากรเห็นรอบปัจจุบัน
+// เลือกดู KPI/สมรรถนะของตัวเองย้อนหลังได้ทุกรอบ (ในหน้าต่างแก้ KPI ของผู้ดูแลใช้เลือกรอบของบุคลากรนั้น)
 function periodSelect(act = 'viewPeriod', cur = VPER().id) {
   const L = S.data.periods || [];
-  if (!isAdmin() || !L.length) return '';
+  if (!L.length) return '';
   const curId = PER().id;
   return `<label style="display:flex;gap:8px;align-items:center;font-size:13px;color:#5A5052"><i class="bi bi-calendar3"></i><select data-change="${act}" style="padding:7px 10px;border:1px solid #D9CCCB;border-radius:8px;font-size:13px;background:#fff">${L.map(p => `<option value="${p.id}" ${p.id === cur ? 'selected' : ''}>${esc(p.round + ' · ปีงบ ' + p.fiscalYear + (p.id === curId ? ' (ปัจจุบัน)' : ''))}</option>`).join('')}</select></label>`;
 }
@@ -1147,9 +1147,18 @@ function render() {
     if (location.hash !== h) history.replaceState(null, '', h);
   }
 }
+// Portfolio แสดงข้อมูลปีงบ/รอบปัจจุบันเสมอ — ถ้ากำลังเลือกดูรอบอื่นอยู่ ล้างตัวเลือกแล้วโหลดข้อมูลรอบปัจจุบันใหม่
+function showPortfolio(quiet) {
+  S.view = 'portfolio'; S.sideOpen = false;
+  if (S.viewPeriod || S.workPeriod) {
+    S.viewPeriod = S.workPeriod = null;
+    return reloadAfter(Promise.resolve());
+  }
+  if (!quiet) render();
+}
 function readHash() {
   const [a, b] = location.hash.replace(/^#\/?/, '').split('/');
-  if (a === 'portfolio') { S.view = 'portfolio'; if (['overview', 'works', 'kpi', 'comp', 'evidence'].includes(b)) S.pfTab = b; }
+  if (a === 'portfolio') { showPortfolio(true); if (['overview', 'works', 'kpi', 'comp', 'evidence'].includes(b)) S.pfTab = b; }
   else if (PAGE_TITLES[a]) { S.view = 'admin'; S.page = a; }
 }
 const set = patch => { Object.assign(S, patch); render(); };
@@ -1336,7 +1345,7 @@ async function reloadAfter(p, okMsg) {
 const A = {
   page: el => set({ page: el.dataset.v, view: 'admin', sideOpen: false, testMsg: '' }),
   side: () => set({ sideOpen: !S.sideOpen }),
-  goPortfolio: () => { set({ view: 'portfolio', sideOpen: false }); window.scrollTo(0, 0); },
+  goPortfolio: () => { showPortfolio(); window.scrollTo(0, 0); },
   goAdmin: () => { set({ view: 'admin' }); window.scrollTo(0, 0); },
   print: () => window.print(),
   logout: async () => { clearChat(); try { await api('/api/logout', { method: 'POST' }); } catch (e) { /* ignore */ } location.reload(); },

@@ -656,10 +656,10 @@ async function listPeriods() {
   const { rows } = await pool.query('SELECT ' + PERIOD_COLS + ' FROM periods ORDER BY start_date DESC, id DESC');
   return rows;
 }
-// รอบที่ขอดู: ผู้ดูแลเลือกได้ทุกรอบ (ค่าไม่ถูกต้อง = รอบปัจจุบัน)
+// รอบที่ขอดู KPI/สมรรถนะ: ทุกคนเลือกดูรอบใดก็ได้ (ข้อมูลของตัวเอง; ค่าไม่ถูกต้อง = รอบปัจจุบัน)
 async function resolvePeriod(req, raw) {
   const id = parseInt(raw, 10);
-  if (id && isAdmin(req) && (await pool.query('SELECT 1 FROM periods WHERE id=$1', [id])).rowCount) return id;
+  if (id && (await pool.query('SELECT 1 FROM periods WHERE id=$1', [id])).rowCount) return id;
   return currentPeriodId();
 }
 function periodFields(b) {
