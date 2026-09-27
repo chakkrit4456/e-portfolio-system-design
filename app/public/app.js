@@ -346,8 +346,7 @@ function pageWorks(D) {
   const cols = 'grid-template-columns:48px minmax(0,3fr) 120px minmax(0,1.4fr) 80px 130px 70px';
   return `
 ${pageHead('ผลงานและโครงการ', 'งานประจำ งานนโยบาย งานโครงการ และงานมอบหมายพิเศษ ปีงบประมาณ 2569', `
-  <button data-act="modal" data-v="work" class="btn btn-outline"><i class="bi bi-pencil-square"></i>เพิ่มผลงานเอง</button>
-  <button data-act="startInterview" class="btn btn-primary" style="padding:10px 16px"><i class="bi bi-plus-lg"></i>เพิ่มผลงาน (สัมภาษณ์ด้วย AI)</button>`)}
+  <button data-act="modal" data-v="work" class="btn btn-outline"><i class="bi bi-pencil-square"></i>เพิ่มผลงานเอง</button>`)}
 <div style="display:flex;gap:8px;flex-wrap:wrap">${chipRow(['ทั้งหมด', ...TYPES], S.typeFilter, 'typeFilter')}</div>
 <div style="${card};overflow:hidden" class="table-wrap">
   <div class="table-min">
